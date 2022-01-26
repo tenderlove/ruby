@@ -92,6 +92,7 @@ extern void rb_mjit_recompile_inlining(const rb_iseq_t *iseq);
 extern void rb_mjit_recompile_const(const rb_iseq_t *iseq);
 RUBY_SYMBOL_EXPORT_END
 
+extern void rb_inline_iseqs(VALUE self, const rb_iseq_t *iseq);
 extern void mjit_cancel_all(const char *reason);
 extern bool mjit_compile(FILE *f, const rb_iseq_t *iseq, const char *funcname, int id);
 extern void mjit_init(const struct mjit_options *opts);
@@ -153,6 +154,10 @@ mjit_exec(rb_execution_context_t *ec)
 
     if (mjit_call_p || yjit_enabled) {
         body->total_calls++;
+    }
+
+    if (body->total_calls == 2) {
+      rb_inline_iseqs(ec->cfp->self, iseq);
     }
 
 #ifndef MJIT_HEADER
