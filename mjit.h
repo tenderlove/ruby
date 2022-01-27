@@ -92,7 +92,7 @@ extern void rb_mjit_recompile_inlining(const rb_iseq_t *iseq);
 extern void rb_mjit_recompile_const(const rb_iseq_t *iseq);
 RUBY_SYMBOL_EXPORT_END
 
-extern void rb_inline_iseqs(VALUE self, const rb_iseq_t *iseq);
+extern rb_iseq_t * rb_inline_callee_iseqs(const rb_callable_method_entry_t *me, const rb_iseq_t * iseq);
 extern void mjit_cancel_all(const char *reason);
 extern bool mjit_compile(FILE *f, const rb_iseq_t *iseq, const char *funcname, int id);
 extern void mjit_init(const struct mjit_options *opts);
@@ -157,7 +157,15 @@ mjit_exec(rb_execution_context_t *ec)
     }
 
     if (body->total_calls == 2) {
-      rb_inline_iseqs(ec->cfp->self, iseq);
+      const rb_callable_method_entry_t *me;
+
+      me = rb_vm_frame_method_entry(ec->cfp);
+
+      if (me && me->def->type == VM_METHOD_TYPE_ISEQ) {
+        const rb_iseq_t * iseq = def_iseq_ptr(me->def);
+        rb_iseq_t * new_iseq = rb_inline_callee_iseqs(me, iseq);
+        me->def->body.iseq.iseqptr = new_iseq;
+      }
     }
 
 #ifndef MJIT_HEADER
