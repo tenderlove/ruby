@@ -320,7 +320,7 @@ find_callee_iseq_sizes(VALUE *code, size_t pos, iseq_value_itr_t * func, void *a
 
     if (insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
-        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size + 1;
+        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size;
         *(unsigned int *)accumulator += callee_size;
     }
     return len;
@@ -1097,11 +1097,9 @@ rb_inline_callee_iseqs(const rb_callable_method_entry_t *me, const rb_iseq_t * i
 
     unsigned int accumulator = 0;
 
-    fprintf(stderr, "disassemble\n");
     for (n = 0; n < size;) {
 	n += find_callee_iseq_sizes(code, n, NULL, &accumulator, translator);
     }
-    fprintf(stderr, "accumulator: %d\n", accumulator);
     VALUE * new_buffer = calloc(body->iseq_size + accumulator, sizeof(VALUE));
 
     struct inline_context ctx;
