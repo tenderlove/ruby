@@ -312,55 +312,6 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
     return len;
 }
 
-static int
-find_callee_iseq_sizes(VALUE *code, size_t pos, iseq_value_itr_t * func, void *accumulator, rb_vm_insns_translator_t * translator)
-{
-    VALUE insn_id = translator((void *)code[pos]);
-    int len = insn_len(insn_id);
-
-    if (insn_id == BIN(opt_send_without_block)) {
-        CALL_DATA cd = (CALL_DATA)code[pos + 1];
-        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size;
-        *(unsigned int *)accumulator += callee_size;
-    }
-    return len;
-}
-
-struct inline_context {
-    VALUE * new_iseqs;
-    unsigned int idx;
-};
-
-static int
-inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator)
-{
-    struct inline_context * ctx = (struct inline_context *)_ctx;
-
-    VALUE insn_id = translator((void *)code[pos]);
-    int len = insn_len(insn_id);
-
-    if (insn_id == BIN(opt_send_without_block)) {
-        CALL_DATA cd = (CALL_DATA)code[pos + 1];
-        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size;
-        VALUE * callee_iseqs = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_encoded;
-        memcpy((void *)((intptr_t)ctx->new_iseqs + (ctx->idx * sizeof(VALUE))), callee_iseqs, callee_size * sizeof(VALUE));
-        ctx->idx += callee_size;
-        const void * const *table = rb_vm_get_insns_address_table();
-        ctx->new_iseqs[ctx->idx] = (VALUE)table[BIN(pop)];
-        ctx->idx++;
-    } else {
-        // push_1
-        //
-        // Copy the caller's iseqs in
-        for (int i = 0; i < len; i++) {
-            ctx->new_iseqs[ctx->idx + i] = code[pos + i];
-        }
-        ctx->idx += len;
-    }
-
-    return len;
-}
-
 static void
 rb_iseq_each_value(const rb_iseq_t *iseq, iseq_value_itr_t * func, void *data)
 {
@@ -1065,59 +1016,6 @@ iseq_translate(rb_iseq_t *iseq)
     return iseq;
 }
 
-static rb_iseq_t *
-rb_dup_iseq_for_inlining(const rb_iseq_t * iseq)
-{
-    rb_iseq_t *new_iseq = iseq_imemo_alloc();
-    memcpy(new_iseq, iseq, sizeof(rb_iseq_t));
-
-    new_iseq->body = rb_iseq_constant_body_alloc();
-    memcpy(new_iseq->body, iseq->body, sizeof(struct rb_iseq_constant_body));
-    return new_iseq;
-}
-
-rb_iseq_t *
-rb_inline_callee_iseqs(const rb_callable_method_entry_t *me, const rb_iseq_t * iseq)
-{
-    unsigned int size;
-    VALUE *code;
-    size_t n;
-    rb_vm_insns_translator_t *const translator =
-#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
-        (FL_TEST((VALUE)iseq, ISEQ_TRANSLATED)) ? rb_vm_insn_addr2insn2 :
-#endif
-        rb_vm_insn_null_translator;
-
-    rb_iseq_t *new_iseq = rb_dup_iseq_for_inlining(iseq);
-
-    const struct rb_iseq_constant_body *const body = iseq->body;
-
-    size = body->iseq_size;
-    code = body->iseq_encoded;
-
-    unsigned int accumulator = 0;
-
-    for (n = 0; n < size;) {
-	n += find_callee_iseq_sizes(code, n, NULL, &accumulator, translator);
-    }
-    VALUE * new_buffer = calloc(body->iseq_size + accumulator, sizeof(VALUE));
-
-    struct inline_context ctx;
-    ctx.new_iseqs = new_buffer;
-    ctx.idx = 0;
-
-    // Copy everything to new_buffer
-    for (n = 0; n < size;) {
-	n += inline_iseqs(code, n, NULL, &ctx, translator);
-    }
-
-    *(VALUE **)&new_iseq->body->iseq_encoded = new_buffer;
-    *(unsigned int*)&new_iseq->body->iseq_size = ctx.idx;
-    //
-    // set new_buffer on the body (HACK!)
-    return new_iseq;
-}
-
 rb_iseq_t *
 rb_iseq_new_with_opt(const rb_ast_body_t *ast, VALUE name, VALUE path, VALUE realpath,
 		     VALUE first_lineno, const rb_iseq_t *parent, int isolated_depth,
@@ -1395,6 +1293,12 @@ rb_iseq_first_lineno(const rb_iseq_t *iseq)
     return ISEQ_BODY(iseq)->location.first_lineno;
 }
 
+const rb_iseq_t *
+rb_iseq_parent(const rb_iseq_t *iseq)
+{
+    return iseq->body->parent_iseq;
+}
+
 VALUE
 rb_iseq_method_name(const rb_iseq_t *iseq)
 {
@@ -1406,6 +1310,14 @@ rb_iseq_method_name(const rb_iseq_t *iseq)
     else {
 	return Qnil;
     }
+}
+
+rb_iseq_t *
+iseq_alloc_for_inlining(const rb_iseq_t *original_iseq)
+{
+    rb_iseq_t *iseq = iseq_alloc();
+    prepare_iseq_build(iseq, rb_iseq_label(original_iseq), rb_iseq_path(original_iseq), rb_iseq_realpath(original_iseq), rb_iseq_first_lineno(original_iseq), NULL, -1, rb_iseq_parent(original_iseq), 0, original_iseq->body->type, Qnil, &COMPILE_OPTION_DEFAULT);
+    return iseq;
 }
 
 void

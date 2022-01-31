@@ -721,6 +721,89 @@ validate_labels(rb_iseq_t *iseq, st_table *labels_table)
     st_free_table(labels_table);
 }
 
+typedef VALUE iseq_value_itr_t(void *ctx, VALUE obj);
+typedef VALUE rb_vm_insns_translator_t(const void *addr);
+
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+static VALUE
+rb_vm_insn_addr2insn2(const void *addr)
+{
+    return (VALUE)rb_vm_insn_addr2insn(addr);
+}
+#endif
+
+static VALUE
+rb_vm_insn_null_translator(const void *addr)
+{
+    return (VALUE)addr;
+}
+
+struct inline_context {
+    rb_iseq_t * iseq;
+    VALUE * new_iseqs;
+    LINK_ANCHOR *ret;
+    unsigned int idx;
+};
+
+static int
+find_callee_iseq_sizes(VALUE *code, size_t pos, iseq_value_itr_t * func, void *accumulator, rb_vm_insns_translator_t * translator)
+{
+    VALUE insn_id = translator((void *)code[pos]);
+    int len = insn_len(insn_id);
+
+    if (insn_id == BIN(opt_send_without_block)) {
+        CALL_DATA cd = (CALL_DATA)code[pos + 1];
+        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size;
+        *(unsigned int *)accumulator += callee_size;
+    }
+    return len;
+}
+
+static INSN * new_insn_core(rb_iseq_t *iseq, const NODE *line_node, int insn_id, int argc, VALUE *argv);
+
+static int
+inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator)
+{
+    struct inline_context * ctx = (struct inline_context *)_ctx;
+
+    int insn_id = (int)translator((void *)code[pos]);
+    int len = insn_len(insn_id);
+
+    rb_iseq_t * iseq = ctx->iseq;
+    LINK_ANCHOR *ret = ctx->ret;
+
+    NODE dummy_line_node = generate_dummy_line_node(0, -1);
+
+    if (insn_id == BIN(opt_send_without_block)) {
+        ADD_INSN(ret, &dummy_line_node, nop);
+    } else {
+        ADD_ELEM(ret, (LINK_ELEMENT *)
+                new_insn_core(iseq, &dummy_line_node, insn_id, len - 1, &code[pos + 1]));
+    }
+    /*
+    if (insn_id == BIN(opt_send_without_block)) {
+        CALL_DATA cd = (CALL_DATA)code[pos + 1];
+        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size;
+        VALUE * callee_iseqs = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_encoded;
+        memcpy((void *)((intptr_t)ctx->new_iseqs + (ctx->idx * sizeof(VALUE))), callee_iseqs, callee_size * sizeof(VALUE));
+        ctx->idx += callee_size;
+        const void * const *table = rb_vm_get_insns_address_table();
+        ctx->new_iseqs[ctx->idx] = (VALUE)table[BIN(pop)];
+        ctx->idx++;
+    } else {
+        // push_1
+        //
+        // Copy the caller's iseqs in
+        for (int i = 0; i < len; i++) {
+            ctx->new_iseqs[ctx->idx + i] = code[pos + i];
+        }
+        ctx->idx += len;
+    }
+    */
+
+    return len;
+}
+
 VALUE
 rb_iseq_compile_callback(rb_iseq_t *iseq, const struct rb_iseq_new_with_callback_callback_func * ifunc)
 {
@@ -12982,3 +13065,48 @@ rb_iseq_ibf_load_extra_data(VALUE str)
     RB_GC_GUARD(loader_obj);
     return extra_str;
 }
+
+rb_iseq_t * iseq_alloc_for_inlining(const rb_iseq_t *original_iseq);
+
+rb_iseq_t *
+rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
+{
+    unsigned int size;
+    VALUE *code;
+    size_t n;
+    rb_vm_insns_translator_t *const translator =
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+        (FL_TEST((VALUE)original_iseq, ISEQ_TRANSLATED)) ? rb_vm_insn_addr2insn2 :
+#endif
+        rb_vm_insn_null_translator;
+
+    rb_iseq_t *iseq = iseq_alloc_for_inlining(original_iseq);
+
+    DECL_ANCHOR(ret);
+    INIT_ANCHOR(ret);
+
+    struct inline_context ctx;
+    ctx.iseq = iseq;
+    ctx.ret = ret;
+
+    const struct rb_iseq_constant_body *const body = original_iseq->body;
+
+    size = body->iseq_size;
+    code = body->iseq_encoded;
+
+    unsigned int accumulator = 0;
+
+    // Copy everything to new_buffer
+    for (n = 0; n < size;) {
+	n += inline_iseqs(code, n, NULL, &ctx, translator);
+    }
+
+    CHECK(iseq_setup_insn(iseq, ret));
+    iseq_setup(iseq, ret);
+
+    //
+    // set new_buffer on the body (HACK!)
+    return iseq;
+    //return original_iseq;
+}
+
