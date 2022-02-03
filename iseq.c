@@ -1315,8 +1315,12 @@ rb_iseq_method_name(const rb_iseq_t *iseq)
 rb_iseq_t *
 iseq_alloc_for_inlining(const rb_iseq_t *original_iseq)
 {
+    rb_compile_option_t * options = malloc(sizeof(rb_compile_option_t));
+    memcpy(options, &COMPILE_OPTION_DEFAULT, sizeof(rb_compile_option_t));
+    options->peephole_optimization = 0;
+
     rb_iseq_t *iseq = iseq_alloc();
-    prepare_iseq_build(iseq, rb_iseq_label(original_iseq), rb_iseq_path(original_iseq), rb_iseq_realpath(original_iseq), rb_iseq_first_lineno(original_iseq), NULL, -1, rb_iseq_parent(original_iseq), 0, original_iseq->body->type, Qnil, &COMPILE_OPTION_DEFAULT);
+    prepare_iseq_build(iseq, rb_iseq_label(original_iseq), rb_iseq_path(original_iseq), rb_iseq_realpath(original_iseq), rb_iseq_first_lineno(original_iseq), NULL, -1, rb_iseq_parent(original_iseq), 0, original_iseq->body->type, Qnil, options);
     return iseq;
 }
 

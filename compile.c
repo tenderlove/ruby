@@ -446,6 +446,8 @@ freeze_hide_obj(VALUE obj)
     return obj;
 }
 
+static INSN * new_insn_body(rb_iseq_t *iseq, const NODE *const line_node, enum ruby_vminsn_type insn_id, int argc, ...);
+
 #include "optinsn.inc"
 #if OPT_INSTRUCTIONS_UNIFICATION
 #include "optunifs.inc"
@@ -740,9 +742,8 @@ rb_vm_insn_null_translator(const void *addr)
 
 struct inline_context {
     rb_iseq_t * iseq;
-    VALUE * new_iseqs;
-    LINK_ANCHOR *ret;
-    unsigned int idx;
+    LINK_ANCHOR *code_list_root;
+    unsigned int depth;
 };
 
 static int
@@ -770,36 +771,34 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     int len = insn_len(insn_id);
 
     rb_iseq_t * iseq = ctx->iseq;
-    LINK_ANCHOR *ret = ctx->ret;
+    LINK_ANCHOR *code_list_root = ctx->code_list_root;
 
     NODE dummy_line_node = generate_dummy_line_node(0, -1);
 
+    // Any time we find a method call
     if (insn_id == BIN(opt_send_without_block)) {
-        ADD_INSN(ret, &dummy_line_node, nop);
-    } else {
-        ADD_ELEM(ret, (LINK_ELEMENT *)
-                new_insn_core(iseq, &dummy_line_node, insn_id, len - 1, &code[pos + 1]));
-    }
-    /*
-    if (insn_id == BIN(opt_send_without_block)) {
+        ADD_INSN(code_list_root, &dummy_line_node, pop); // pop self
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
-        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size;
-        VALUE * callee_iseqs = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_encoded;
-        memcpy((void *)((intptr_t)ctx->new_iseqs + (ctx->idx * sizeof(VALUE))), callee_iseqs, callee_size * sizeof(VALUE));
-        ctx->idx += callee_size;
-        const void * const *table = rb_vm_get_insns_address_table();
-        ctx->new_iseqs[ctx->idx] = (VALUE)table[BIN(pop)];
-        ctx->idx++;
-    } else {
-        // push_1
-        //
-        // Copy the caller's iseqs in
-        for (int i = 0; i < len; i++) {
-            ctx->new_iseqs[ctx->idx + i] = code[pos + i];
+        // Convert the method call in to a linked list of the instructions
+        // inside the method
+        // Callee's iseq body
+        const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
+        const struct rb_iseq_constant_body *const body = callee_iseq->body;
+
+        size_t size = body->iseq_size;
+        VALUE * callee_code = body->iseq_encoded;
+
+        ctx->depth += 1;
+        for (size_t n = 0; n < size;) {
+            n += inline_iseqs(callee_code, n, NULL, _ctx, translator);
         }
-        ctx->idx += len;
+        ctx->depth -= 1;
     }
-    */
+    else {
+        INSN * insn = new_insn_core(iseq, &dummy_line_node, insn_id, len - 1, &code[pos + 1]);
+        insn = insn_operands_separate(iseq, &dummy_line_node, insn);
+        ADD_ELEM(code_list_root, (LINK_ELEMENT *)insn);
+    }
 
     return len;
 }
@@ -10601,6 +10600,8 @@ rb_iseq_build_from_ary(rb_iseq_t *iseq, VALUE misc, VALUE locals, VALUE params,
     ISEQ_BODY(iseq)->local_table_size = len;
     ISEQ_BODY(iseq)->local_table = tbl = len > 0 ? (ID *)ALLOC_N(ID, ISEQ_BODY(iseq)->local_table_size) : NULL;
 
+    // We need to set local_table_size to the right length
+    // local_table is a list of IDs (symbol names which are the local variable names)
     for (i = 0; i < len; i++) {
 	VALUE lv = RARRAY_AREF(locals, i);
 
@@ -13082,31 +13083,36 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 
     rb_iseq_t *iseq = iseq_alloc_for_inlining(original_iseq);
 
-    DECL_ANCHOR(ret);
-    INIT_ANCHOR(ret);
+    DECL_ANCHOR(code_list_root);
+    INIT_ANCHOR(code_list_root);
+
+    const struct rb_iseq_constant_body *const body = original_iseq->body;
 
     struct inline_context ctx;
     ctx.iseq = iseq;
-    ctx.ret = ret;
-
-    const struct rb_iseq_constant_body *const body = original_iseq->body;
+    ctx.code_list_root = code_list_root;
+    ctx.depth = 0;
 
     size = body->iseq_size;
     code = body->iseq_encoded;
 
     unsigned int accumulator = 0;
 
+    fprintf(stderr, "start inlining\n");
     // Copy everything to new_buffer
     for (n = 0; n < size;) {
 	n += inline_iseqs(code, n, NULL, &ctx, translator);
     }
+    fprintf(stderr, "done inlining\n");
 
-    CHECK(iseq_setup_insn(iseq, ret));
-    iseq_setup(iseq, ret);
+    fprintf(stderr, "start assembling\n");
+    CHECK(iseq_setup_insn(iseq, code_list_root));
+    fprintf(stderr, "lol\n");
+    iseq_setup(iseq, code_list_root);
+    fprintf(stderr, "done assembling\n");
+    iseq->body->local_table = original_iseq->body->local_table;
+    iseq->body->local_table_size = original_iseq->body->local_table_size;
 
-    //
-    // set new_buffer on the body (HACK!)
     return iseq;
-    //return original_iseq;
 }
 

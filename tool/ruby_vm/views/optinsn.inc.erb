@@ -13,6 +13,38 @@
 } -%>
 
 static INSN *
+insn_operands_separate(rb_iseq_t * iseq, const NODE *const line_node, INSN *iobj)
+{
+#ifdef OPT_OPERANDS_UNIFICATION
+    VALUE *op = iobj->operands;
+
+    switch (iobj->insn_id) {
+    default:
+        /* do nothing */;
+        return iobj;
+        break;
+
+% RubyVM::OperandsUnifications.each_group do |orig, unifs|
+%   unifs.each do |insn|
+    /* <%= insn.pretty_name %> */
+    case <%= insn.bin %>:
+        return new_insn_body(iseq, line_node, <%= orig.bin %>, <%= orig.opes.size %>,
+%     insn.spec.each_with_index do |(var, val), i|
+%       if val == "*"
+            op[<%= i %>]<%= i == insn.spec.length - 1 ? ");" : "," %>
+%       else
+            INT2NUM(<%= val %>)<%= i == insn.spec.length - 1 ? ");" : "," %>
+%       end
+%     end
+        break;
+%   end
+% end
+    }
+#endif
+    return iobj;
+}
+
+static INSN *
 insn_operands_unification(INSN *iobj)
 {
 #ifdef OPT_OPERANDS_UNIFICATION
