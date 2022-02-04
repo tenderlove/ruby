@@ -783,6 +783,16 @@ opt_send_without_block
     }
 }
 
+/* Invoke method without block */
+DEFINE_INSN
+jump_if_cache_miss
+(CALL_DATA cd)
+()
+()
+{
+    fprintf(stderr, "great\n");
+}
+
 /* Convert object to string using to_s or equivalent. */
 DEFINE_INSN
 objtostring

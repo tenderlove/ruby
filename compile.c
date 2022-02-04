@@ -779,6 +779,7 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     if (insn_id == BIN(opt_send_without_block)) {
         ADD_INSN(code_list_root, &dummy_line_node, pop); // pop self
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
+        ADD_INSN2(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
         // Convert the method call in to a linked list of the instructions
         // inside the method
         // Callee's iseq body
@@ -2503,12 +2504,17 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			}
                         case TS_CALLDATA:
                         {
-                            const struct rb_callinfo *source_ci = (const struct rb_callinfo *)operands[j];
-                            struct rb_call_data *cd = &body->call_data[ISEQ_COMPILE_DATA(iseq)->ci_index++];
-                            assert(ISEQ_COMPILE_DATA(iseq)->ci_index <= body->ci_size);
-                            cd->ci = source_ci;
-                            cd->cc = vm_cc_empty();
-                            generated_iseq[code_index + 1 + j] = (VALUE)cd;
+                            if (iseq->body->param.flags.inlined_iseq) {
+                                generated_iseq[code_index + 1 + j] = operands[j];
+                            }
+                            else {
+                                const struct rb_callinfo *source_ci = (const struct rb_callinfo *)operands[j];
+                                struct rb_call_data *cd = &body->call_data[ISEQ_COMPILE_DATA(iseq)->ci_index++];
+                                assert(ISEQ_COMPILE_DATA(iseq)->ci_index <= body->ci_size);
+                                cd->ci = source_ci;
+                                cd->cc = vm_cc_empty();
+                                generated_iseq[code_index + 1 + j] = (VALUE)cd;
+                            }
                             break;
                         }
 		      case TS_ID: /* ID */
@@ -13082,6 +13088,7 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
         rb_vm_insn_null_translator;
 
     rb_iseq_t *iseq = iseq_alloc_for_inlining(original_iseq);
+    iseq->body->param.flags.inlined_iseq = 1;
 
     DECL_ANCHOR(code_list_root);
     INIT_ANCHOR(code_list_root);
@@ -13098,18 +13105,13 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 
     unsigned int accumulator = 0;
 
-    fprintf(stderr, "start inlining\n");
     // Copy everything to new_buffer
     for (n = 0; n < size;) {
 	n += inline_iseqs(code, n, NULL, &ctx, translator);
     }
-    fprintf(stderr, "done inlining\n");
 
-    fprintf(stderr, "start assembling\n");
     CHECK(iseq_setup_insn(iseq, code_list_root));
-    fprintf(stderr, "lol\n");
     iseq_setup(iseq, code_list_root);
-    fprintf(stderr, "done assembling\n");
     iseq->body->local_table = original_iseq->body->local_table;
     iseq->body->local_table_size = original_iseq->body->local_table_size;
 
