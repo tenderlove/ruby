@@ -762,48 +762,6 @@ find_callee_iseq_sizes(VALUE *code, size_t pos, iseq_value_itr_t * func, void *a
 
 static INSN * new_insn_core(rb_iseq_t *iseq, const NODE *line_node, int insn_id, int argc, VALUE *argv);
 
-static int
-inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator)
-{
-    struct inline_context * ctx = (struct inline_context *)_ctx;
-
-    int insn_id = (int)translator((void *)code[pos]);
-    int len = insn_len(insn_id);
-
-    rb_iseq_t * iseq = ctx->iseq;
-    LINK_ANCHOR *code_list_root = ctx->code_list_root;
-
-    NODE dummy_line_node = generate_dummy_line_node(0, -1);
-
-    // Any time we find a method call
-    if (insn_id == BIN(opt_send_without_block)) {
-        ADD_INSN(code_list_root, &dummy_line_node, pop); // pop self
-        CALL_DATA cd = (CALL_DATA)code[pos + 1];
-        ADD_INSN2(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
-        // Convert the method call in to a linked list of the instructions
-        // inside the method
-        // Callee's iseq body
-        const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
-        const struct rb_iseq_constant_body *const body = callee_iseq->body;
-
-        size_t size = body->iseq_size;
-        VALUE * callee_code = body->iseq_encoded;
-
-        ctx->depth += 1;
-        for (size_t n = 0; n < size;) {
-            n += inline_iseqs(callee_code, n, NULL, _ctx, translator);
-        }
-        ctx->depth -= 1;
-    }
-    else {
-        INSN * insn = new_insn_core(iseq, &dummy_line_node, insn_id, len - 1, &code[pos + 1]);
-        insn = insn_operands_separate(iseq, &dummy_line_node, insn);
-        ADD_ELEM(code_list_root, (LINK_ELEMENT *)insn);
-    }
-
-    return len;
-}
-
 VALUE
 rb_iseq_compile_callback(rb_iseq_t *iseq, const struct rb_iseq_new_with_callback_callback_func * ifunc)
 {
@@ -13075,6 +13033,70 @@ rb_iseq_ibf_load_extra_data(VALUE str)
 
 rb_iseq_t * iseq_alloc_for_inlining(const rb_iseq_t *original_iseq);
 
+static int
+inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator)
+{
+    struct inline_context * ctx = (struct inline_context *)_ctx;
+
+    int insn_id = (int)translator((void *)code[pos]);
+    int len = insn_len(insn_id);
+    const char *opnd_types = insn_op_types(insn_id);
+
+    rb_iseq_t * iseq = ctx->iseq;
+    LINK_ANCHOR *code_list_root = ctx->code_list_root;
+
+    NODE dummy_line_node = generate_dummy_line_node(0, -1);
+
+    // Any time we find a method call
+    if (insn_id == BIN(opt_send_without_block)) {
+        CALL_DATA cd = (CALL_DATA)code[pos + 1];
+
+        // Is the cache still valid?
+        ADD_INSN1(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
+
+        // Convert the method call in to a linked list of the instructions
+        // inside the method
+        // Callee's iseq body
+        const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
+        const struct rb_iseq_constant_body *const body = callee_iseq->body;
+
+        size_t size = body->iseq_size;
+        VALUE * callee_code = body->iseq_encoded;
+
+        ctx->depth += 1;
+        for (size_t n = 0; n < size;) {
+            n += inline_iseqs(callee_code, n, NULL, _ctx, translator);
+        }
+        ctx->depth -= 1;
+    }
+    else {
+        VALUE * ops = NULL;
+        if (len - 1 > 0) {
+            ops = compile_data_alloc2(iseq, sizeof(VALUE), len - 1);
+            // Copy operands embedded in the iseq in to our node ops buffer
+            for(int i = 0; opnd_types[i]; i++) {
+                char type = opnd_types[i];
+                switch (type) {
+                  case TS_LINDEX:
+                  case TS_NUM:	/* ulong */
+                      // Convert back to a Ruby object so that the assembler
+                      // will work.  The assembler converts it to an int
+                      ops[i] = INT2FIX(code[pos + i + 1]);
+                      break;
+                  default:
+                      ops[i] = code[pos + i + 1];
+                      break;
+                }
+            }
+        }
+        INSN * insn = new_insn_core(iseq, &dummy_line_node, insn_id, len - 1, ops);
+        insn = insn_operands_separate(iseq, &dummy_line_node, insn);
+        ADD_ELEM(code_list_root, (LINK_ELEMENT *)insn);
+    }
+
+    return len;
+}
+
 rb_iseq_t *
 rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 {
@@ -13112,6 +13134,7 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 
     CHECK(iseq_setup_insn(iseq, code_list_root));
     iseq_setup(iseq, code_list_root);
+    iseq->body->param.lead_num = original_iseq->body->param.lead_num;
     iseq->body->local_table = original_iseq->body->local_table;
     iseq->body->local_table_size = original_iseq->body->local_table_size;
 

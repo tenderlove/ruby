@@ -787,10 +787,11 @@ opt_send_without_block
 DEFINE_INSN
 jump_if_cache_miss
 (CALL_DATA cd)
-()
+(VALUE recv)
 ()
 {
-    fprintf(stderr, "great\n");
+    rp(recv);
+    fprintf(stderr, "we should check the cache!\n");
 }
 
 /* Convert object to string using to_s or equivalent. */
