@@ -787,11 +787,24 @@ opt_send_without_block
 DEFINE_INSN
 jump_if_cache_miss
 (CALL_DATA cd)
-(VALUE recv)
+()
 ()
 {
-    rp(recv);
-    fprintf(stderr, "we should check the cache!\n");
+    VALUE recv = TOPN(vm_ci_argc(cd->ci));
+
+    if (LIKELY(vm_cc_class_check(cd->cc, CLASS_OF(recv)))) {
+        if (LIKELY(!METHOD_ENTRY_INVALIDATED(vm_cc_cme(cd->cc)))) {
+            RB_DEBUG_COUNTER_INC(mc_inline_hit);
+            fprintf(stderr, "hit!\n");
+        }
+        else {
+          fprintf(stderr, "guard miss 1!\n");
+        }
+    }
+    else {
+        fprintf(stderr, "guard miss 2!\n");
+        RB_DEBUG_COUNTER_INC(mc_inline_miss_klass);
+    }
 }
 
 /* Convert object to string using to_s or equivalent. */

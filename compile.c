@@ -744,6 +744,7 @@ struct inline_context {
     rb_iseq_t * iseq;
     LINK_ANCHOR *code_list_root;
     unsigned int depth;
+    LABEL * leave_label;
 };
 
 static int
@@ -2462,7 +2463,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			}
                         case TS_CALLDATA:
                         {
-                            if (iseq->body->param.flags.inlined_iseq) {
+                            if (insn == BIN(jump_if_cache_miss)) {
                                 generated_iseq[code_index + 1 + j] = operands[j];
                             }
                             else {
@@ -13051,23 +13052,42 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     if (insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
-        // Is the cache still valid?
-        ADD_INSN1(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
-
         // Convert the method call in to a linked list of the instructions
         // inside the method
         // Callee's iseq body
-        const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
-        const struct rb_iseq_constant_body *const body = callee_iseq->body;
+        if (cd->cc->cme_->def->type == VM_METHOD_TYPE_ISEQ) {
+            const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
+            const struct rb_iseq_constant_body *const body = callee_iseq->body;
 
-        size_t size = body->iseq_size;
-        VALUE * callee_code = body->iseq_encoded;
+            // Is the cache still valid?
+            ADD_INSN1(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
 
-        ctx->depth += 1;
-        for (size_t n = 0; n < size;) {
-            n += inline_iseqs(callee_code, n, NULL, _ctx, translator);
+            size_t size = body->iseq_size;
+            VALUE * callee_code = body->iseq_encoded;
+
+            LABEL * leave_label = NEW_LABEL(0);
+
+            struct inline_context next_ctx;
+            next_ctx.iseq = iseq;
+            next_ctx.code_list_root = code_list_root;
+            next_ctx.depth = ctx->depth + 1;
+            next_ctx.leave_label = leave_label;
+
+            for (size_t n = 0; n < size;) {
+                n += inline_iseqs(callee_code, n, NULL, &next_ctx, translator);
+            }
+
+            ADD_LABEL(code_list_root, leave_label);
+            // Set the return value in to the receiver slot on the stack
+            ADD_INSN1(code_list_root, &dummy_line_node, setn, INT2FIX(vm_ci_argc(cd->ci) + 1));
+
+            // Pop all args
+            ADD_INSN1(code_list_root, &dummy_line_node, adjuststack, INT2FIX(vm_ci_argc(cd->ci) + 1));
         }
-        ctx->depth -= 1;
+        else {
+            iseq->body->ci_size++;
+            ADD_INSN1(code_list_root, &dummy_line_node, opt_send_without_block, cd->ci);
+        }
     }
     else {
         VALUE * ops = NULL;
@@ -13077,11 +13097,18 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             for(int i = 0; opnd_types[i]; i++) {
                 char type = opnd_types[i];
                 switch (type) {
+                  case TS_CALLDATA:
+                      iseq->body->ci_size++;
+                      ops[i] = ((CALL_DATA)code[pos + i + 1])->ci;
+                      break;
                   case TS_LINDEX:
                   case TS_NUM:	/* ulong */
                       // Convert back to a Ruby object so that the assembler
                       // will work.  The assembler converts it to an int
                       ops[i] = INT2FIX(code[pos + i + 1]);
+                      break;
+                  case TS_ID:
+                      ops[i] = ID2SYM(code[pos + i + 1]);
                       break;
                   default:
                       ops[i] = code[pos + i + 1];
@@ -13091,6 +13118,14 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
         }
         INSN * insn = new_insn_core(iseq, &dummy_line_node, insn_id, len - 1, ops);
         insn = insn_operands_separate(iseq, &dummy_line_node, insn);
+        if (ctx->depth > 0 && IS_INSN_ID(insn, leave)) {
+            insn = new_insn_body(iseq, &dummy_line_node, BIN(jump), 1, ctx->leave_label);
+            LABEL_REF(ctx->leave_label);
+        }
+        if (ctx->depth > 0 && IS_INSN_ID(insn, getlocal)) {
+            int depth = NUM2INT(OPERAND_AT(insn, 0)) - 3;
+            insn = new_insn_body(iseq, &dummy_line_node, BIN(topn), 1, INT2NUM(depth));
+        }
         ADD_ELEM(code_list_root, (LINK_ELEMENT *)insn);
     }
 

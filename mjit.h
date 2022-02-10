@@ -165,6 +165,8 @@ mjit_exec(rb_execution_context_t *ec)
         const rb_iseq_t * iseq = def_iseq_ptr(me->def);
         rb_iseq_t * new_iseq = rb_inline_callee_iseqs(iseq);
         me->def->body.iseq.iseqptr = new_iseq;
+
+        return Qundef;
       }
     }
 
