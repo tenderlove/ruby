@@ -40,6 +40,8 @@
 #include "vm_callinfo.h"
 #include "vm_debug.h"
 
+RUBY_EXTERN rb_serial_t ruby_vm_total_ic_count;
+
 #include "builtin.h"
 #include "insns.inc"
 #include "insns_info.inc"
@@ -2333,6 +2335,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     positions = ALLOC_N(unsigned int, insn_num);
     body->is_entries = ZALLOC_N(union iseq_inline_storage_entry, body->is_size);
     body->call_data = ZALLOC_N(struct rb_call_data, body->ci_size);
+    ruby_vm_total_ic_count += body->ci_size;
     ISEQ_COMPILE_DATA(iseq)->ci_index = 0;
 
     list = FIRST_ELEMENT(anchor);

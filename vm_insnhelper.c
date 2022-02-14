@@ -1891,12 +1891,12 @@ rb_vm_search_method_slowpath(const struct rb_callinfo *ci, VALUE klass)
 }
 #endif
 
+RUBY_EXTERN rb_serial_t ruby_vm_used_ic_count;
+
 static const struct rb_callcache *
 vm_search_method_slowpath0(VALUE cd_owner, struct rb_call_data *cd, VALUE klass)
 {
-#if USE_DEBUG_COUNTER
     const struct rb_callcache *old_cc = cd->cc;
-#endif
 
     const struct rb_callcache *cc = rb_vm_search_method_slowpath(cd->ci, klass);
 
@@ -1931,6 +1931,10 @@ vm_search_method_slowpath0(VALUE cd_owner, struct rb_call_data *cd, VALUE klass)
     }
 #endif
 #endif // OPT_INLINE_METHOD_CACHE
+
+    if (old_cc == empty_cc) {
+        ruby_vm_used_ic_count++;
+    }
 
     VM_ASSERT(vm_cc_cme(cc) == NULL ||
               vm_cc_cme(cc)->called_id == vm_ci_mid(cd->ci));
