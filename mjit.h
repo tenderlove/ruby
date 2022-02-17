@@ -10,6 +10,7 @@
 
 #include "ruby/internal/config.h" // defines USE_MJIT
 #include "ruby/internal/stdbool.h"
+#include "internal/class.h"
 #include "vm_core.h"
 
 # if USE_MJIT
@@ -157,14 +158,29 @@ mjit_exec(rb_execution_context_t *ec)
     }
 
     if (body->total_calls == 2) {
-      const rb_callable_method_entry_t *me;
+      const rb_callable_method_entry_t *cme;
 
-      me = rb_vm_frame_method_entry(ec->cfp);
+      cme = rb_vm_frame_method_entry(ec->cfp);
 
-      if (me && me->def->type == VM_METHOD_TYPE_ISEQ) {
-        const rb_iseq_t * iseq = def_iseq_ptr(me->def);
+      // online inline Ruby methods
+      if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ) {
+        const rb_iseq_t * iseq = def_iseq_ptr(cme->def);
         rb_iseq_t * new_iseq = rb_inline_callee_iseqs(iseq);
-        me->def->body.iseq.iseqptr = new_iseq;
+
+        if (new_iseq) {
+          // Clone existing method
+          const rb_method_entry_t * new_cme = rb_method_entry_clone((const rb_method_entry_t *)cme);
+
+          new_cme->def->body.iseq.iseqptr = new_iseq;
+
+          VALUE klass = cme->defined_class;
+
+          struct rb_id_table * mtbl = RCLASS_M_TBL(klass);
+          rb_method_table_insert(klass, mtbl, cme->called_id, new_cme);
+
+          rb_clear_method_cache(cme->defined_class, cme->called_id);
+          METHOD_ENTRY_INVALIDATED_SET((rb_method_entry_t *)cme);
+        }
 
         return Qundef;
       }

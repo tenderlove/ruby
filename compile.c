@@ -742,9 +742,11 @@ rb_vm_insn_null_translator(const void *addr)
 
 struct inline_context {
     rb_iseq_t * iseq;
+    unsigned int caller_locals;
     LINK_ANCHOR *code_list_root;
     unsigned int depth;
     LABEL * leave_label;
+    unsigned int max_locals;
 };
 
 static int
@@ -13049,7 +13051,7 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     NODE dummy_line_node = generate_dummy_line_node(0, -1);
 
     // Any time we find a method call
-    if (insn_id == BIN(opt_send_without_block)) {
+    if (ctx->depth == 0 && insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
         // Convert the method call in to a linked list of the instructions
@@ -13069,20 +13071,25 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
 
             struct inline_context next_ctx;
             next_ctx.iseq = iseq;
+            next_ctx.caller_locals = ctx->caller_locals;
             next_ctx.code_list_root = code_list_root;
             next_ctx.depth = ctx->depth + 1;
             next_ctx.leave_label = leave_label;
+            next_ctx.max_locals = ctx->max_locals;
+
+            for (int i = 0; i < vm_ci_argc(cd->ci); i++) {
+                int index = ctx->caller_locals + i;
+                ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(index + VM_ENV_DATA_SIZE - 2), INT2NUM(0));
+            }
+
+            // Remove the receiver from the stack
+            ADD_INSN(code_list_root, &dummy_line_node, pop);
 
             for (size_t n = 0; n < size;) {
                 n += inline_iseqs(callee_code, n, NULL, &next_ctx, translator);
             }
 
             ADD_LABEL(code_list_root, leave_label);
-            // Set the return value in to the receiver slot on the stack
-            ADD_INSN1(code_list_root, &dummy_line_node, setn, INT2FIX(vm_ci_argc(cd->ci) + 1));
-
-            // Pop all args
-            ADD_INSN1(code_list_root, &dummy_line_node, adjuststack, INT2FIX(vm_ci_argc(cd->ci) + 1));
         }
         else {
             iseq->body->ci_size++;
@@ -13122,11 +13129,38 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             insn = new_insn_body(iseq, &dummy_line_node, BIN(jump), 1, ctx->leave_label);
             LABEL_REF(ctx->leave_label);
         }
-        if (ctx->depth > 0 && IS_INSN_ID(insn, getlocal)) {
-            int depth = NUM2INT(OPERAND_AT(insn, 0)) - 3;
-            insn = new_insn_body(iseq, &dummy_line_node, BIN(topn), 1, INT2NUM(depth));
+        if (ctx->depth == 0 && IS_INSN_ID(insn, getlocal)) {
+            int depth = NUM2INT(OPERAND_AT(insn, 0)) + ctx->max_locals;
+            insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2NUM(depth), OPERAND_AT(insn, 1));
         }
         ADD_ELEM(code_list_root, (LINK_ELEMENT *)insn);
+    }
+
+    return len;
+}
+
+static int
+find_max_local_table(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator)
+{
+    int insn_id = (int)translator((void *)code[pos]);
+    int len = insn_len(insn_id);
+    const char *opnd_types = insn_op_types(insn_id);
+
+    // Any time we find a method call
+    if (insn_id == BIN(opt_send_without_block)) {
+        CALL_DATA cd = (CALL_DATA)code[pos + 1];
+
+        // Convert the method call in to a linked list of the instructions
+        // inside the method
+        // Callee's iseq body
+        if (cd->cc->cme_->def->type == VM_METHOD_TYPE_ISEQ) {
+            const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
+            unsigned int local_table_size = callee_iseq->body->local_table_size;
+
+            if (local_table_size + 1 > *(unsigned int *)_ctx) {
+                *(unsigned int *)_ctx = local_table_size + 1;
+            }
+        }
     }
 
     return len;
@@ -13144,23 +13178,48 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 #endif
         rb_vm_insn_null_translator;
 
+    const struct rb_iseq_constant_body *const body = original_iseq->body;
+    unsigned int max_locals = 0;
+
+    size = body->iseq_size;
+    code = body->iseq_encoded;
+
+    // Find the max argc for callees
+    // Scan the instructions looking for method calls, then record the
+    // *maximum* number of parameters to the method
+    for (n = 0; n < size;) {
+	n += find_max_local_table(code, n, NULL, &max_locals, translator);
+    }
+
+    // There's nothing to inline
+    if (max_locals == 0) {
+        return NULL;
+    }
+
     rb_iseq_t *iseq = iseq_alloc_for_inlining(original_iseq);
     iseq->body->param.flags.inlined_iseq = 1;
 
     DECL_ANCHOR(code_list_root);
     INIT_ANCHOR(code_list_root);
 
-    const struct rb_iseq_constant_body *const body = original_iseq->body;
-
     struct inline_context ctx;
-    ctx.iseq = iseq;
+    ctx.iseq = iseq; // Inlined iseq
+
+    // number of locals in the caller
+    ctx.caller_locals = original_iseq->body->local_table_size;
+
+    // Linked list for building the inlined method
     ctx.code_list_root = code_list_root;
+
+    // depth
     ctx.depth = 0;
 
-    size = body->iseq_size;
-    code = body->iseq_encoded;
+    // Initialize the maximum locals
+    ctx.max_locals = 0;
 
-    unsigned int accumulator = 0;
+    if (max_locals) {
+        ctx.max_locals = max_locals - 1;
+    }
 
     // Copy everything to new_buffer
     for (n = 0; n < size;) {
@@ -13169,9 +13228,14 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 
     CHECK(iseq_setup_insn(iseq, code_list_root));
     iseq_setup(iseq, code_list_root);
+    iseq->body->param.size = original_iseq->body->param.size;
     iseq->body->param.lead_num = original_iseq->body->param.lead_num;
     iseq->body->local_table = original_iseq->body->local_table;
     iseq->body->local_table_size = original_iseq->body->local_table_size;
+
+    if (max_locals) {
+        iseq->body->local_table_size += max_locals - 1;
+    }
 
     return iseq;
 }
