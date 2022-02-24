@@ -746,7 +746,8 @@ struct inline_context {
     LINK_ANCHOR *code_list_root;
     unsigned int depth;
     LABEL * leave_label;
-    unsigned int max_locals;
+    unsigned int caller_local_size;
+    unsigned int local_increase;
 };
 
 static int
@@ -10518,7 +10519,7 @@ rb_iseq_mark_insn_storage(struct iseq_compile_data_storage *storage)
 
             iobj = (INSN *)&storage->buff[pos];
 
-            if (iobj->operands) {
+            if (iobj->operands && !IS_INSN_ID(iobj, jump_if_cache_miss)) {
                 int j;
                 const char *types = insn_op_types(iobj->insn_id);
 
@@ -13061,6 +13062,9 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
             const struct rb_iseq_constant_body *const body = callee_iseq->body;
 
+            if (ctx->local_increase < vm_ci_argc(cd->ci)) {
+                ctx->local_increase += (vm_ci_argc(cd->ci) - ctx->local_increase);
+            }
             // Is the cache still valid?
             ADD_INSN1(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
 
@@ -13075,11 +13079,9 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             next_ctx.code_list_root = code_list_root;
             next_ctx.depth = ctx->depth + 1;
             next_ctx.leave_label = leave_label;
-            next_ctx.max_locals = ctx->max_locals;
 
-            for (int i = 0; i < vm_ci_argc(cd->ci); i++) {
-                int index = ctx->caller_locals + i;
-                ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(index + VM_ENV_DATA_SIZE - 2), INT2NUM(0));
+            for (unsigned int i = 0; i < vm_ci_argc(cd->ci); i++) {
+                ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(i + VM_ENV_DATA_SIZE), INT2NUM(0));
             }
 
             // Remove the receiver from the stack
@@ -13106,7 +13108,7 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
                 switch (type) {
                   case TS_CALLDATA:
                       iseq->body->ci_size++;
-                      ops[i] = ((CALL_DATA)code[pos + i + 1])->ci;
+                      ops[i] = (VALUE)(((CALL_DATA)code[pos + i + 1])->ci);
                       break;
                   case TS_LINDEX:
                   case TS_NUM:	/* ulong */
@@ -13129,9 +13131,8 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             insn = new_insn_body(iseq, &dummy_line_node, BIN(jump), 1, ctx->leave_label);
             LABEL_REF(ctx->leave_label);
         }
-        if (ctx->depth == 0 && IS_INSN_ID(insn, getlocal)) {
-            int depth = NUM2INT(OPERAND_AT(insn, 0)) + ctx->max_locals;
-            insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2NUM(depth), OPERAND_AT(insn, 1));
+        if (ctx->depth > 0 && IS_INSN_ID(insn, getlocal)) {
+            insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, OPERAND_AT(insn, 0), OPERAND_AT(insn, 1));
         }
         ADD_ELEM(code_list_root, (LINK_ELEMENT *)insn);
     }
@@ -13144,7 +13145,6 @@ find_max_local_table(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ct
 {
     int insn_id = (int)translator((void *)code[pos]);
     int len = insn_len(insn_id);
-    const char *opnd_types = insn_op_types(insn_id);
 
     // Any time we find a method call
     if (insn_id == BIN(opt_send_without_block)) {
@@ -13213,13 +13213,8 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 
     // depth
     ctx.depth = 0;
-
-    // Initialize the maximum locals
-    ctx.max_locals = 0;
-
-    if (max_locals) {
-        ctx.max_locals = max_locals - 1;
-    }
+    ctx.caller_local_size = original_iseq->body->local_table_size;
+    ctx.local_increase = 0;
 
     // Copy everything to new_buffer
     for (n = 0; n < size;) {
@@ -13230,11 +13225,17 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     iseq_setup(iseq, code_list_root);
     iseq->body->param.size = original_iseq->body->param.size;
     iseq->body->param.lead_num = original_iseq->body->param.lead_num;
-    iseq->body->local_table = original_iseq->body->local_table;
-    iseq->body->local_table_size = original_iseq->body->local_table_size;
 
-    if (max_locals) {
-        iseq->body->local_table_size += max_locals - 1;
+    if (ctx.local_increase > 0) {
+        unsigned int local_size = original_iseq->body->local_table_size + ctx.local_increase;
+        ID *ids = (ID *)ALLOC_N(ID, local_size);
+        MEMCPY(ids, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
+        iseq->body->local_table = ids;
+        iseq->body->local_table_size = local_size;
+    }
+    else {
+        iseq->body->local_table = original_iseq->body->local_table;
+        iseq->body->local_table_size = original_iseq->body->local_table_size;
     }
 
     return iseq;
