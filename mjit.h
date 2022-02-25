@@ -138,6 +138,8 @@ mjit_exec_slowpath(rb_execution_context_t *ec, const rb_iseq_t *iseq, struct rb_
     return Qundef;
 }
 
+static int inline_threshold = 2;
+
 // Try to execute the current iseq in ec.  Use JIT code if it is ready.
 // If it is not, add ISEQ to the compilation queue and return Qundef for MJIT.
 // YJIT compiles on the thread running the iseq.
@@ -157,7 +159,7 @@ mjit_exec(rb_execution_context_t *ec)
         body->total_calls++;
     }
 
-    if (body->total_calls == 2) {
+    if (body->total_calls == (unsigned long) inline_threshold) {
       const rb_callable_method_entry_t *cme;
 
       cme = rb_vm_frame_method_entry(ec->cfp);
