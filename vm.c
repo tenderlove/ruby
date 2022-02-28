@@ -3598,7 +3598,7 @@ vm_disable_inlining(VALUE self)
 static VALUE
 vm_inline_threshold_set(VALUE self, VALUE n)
 {
-    inline_threshold = NUM2INT(n);
+    inline_threshold = NUM2ULL(n);
     return n;
 }
 
