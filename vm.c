@@ -3576,6 +3576,20 @@ vm_enable_inlining(VALUE self)
 
 /*
  *  call-seq:
+ *     RubyVM.disable_inlining! -> false
+ *
+ * It turns off the experimenal inlining feature.
+ * This API is used for testing purposes.
+ */
+static VALUE
+vm_disable_inlining(VALUE self)
+{
+    mjit_call_p = false;
+    return RBOOL(false);
+}
+
+/*
+ *  call-seq:
  *     RubyVM.inline_threshold = int
  *
  * It sets the number of method call as the inlining threshold.
@@ -3613,6 +3627,7 @@ Init_VM(void)
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines", vm_keep_script_lines, 0);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines=", vm_keep_script_lines_set, 1);
     rb_define_singleton_method(rb_cRubyVM, "enable_inlining!", vm_enable_inlining, 0);
+    rb_define_singleton_method(rb_cRubyVM, "disable_inlining!", vm_disable_inlining, 0);
     rb_define_singleton_method(rb_cRubyVM, "inline_threshold=", vm_inline_threshold_set, 1);
 
 #if USE_DEBUG_COUNTER
