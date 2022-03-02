@@ -2262,7 +2262,7 @@ vm_call_iseq_setup_normal_0start(rb_execution_context_t *ec, rb_control_frame_t 
     return vm_call_iseq_setup_normal(ec, cfp, calling, vm_cc_cme(cc), 0, param, local);
 }
 
-MJIT_STATIC bool
+MJIT_FUNC_EXPORTED bool
 rb_simple_iseq_p(const rb_iseq_t *iseq)
 {
     return ISEQ_BODY(iseq)->param.flags.has_opt == FALSE &&

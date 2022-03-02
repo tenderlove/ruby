@@ -432,6 +432,7 @@ rb_serial_t ruby_vm_constant_cache_invalidations = 0;
 rb_serial_t ruby_vm_constant_cache_misses = 0;
 rb_serial_t ruby_vm_class_serial = 1;
 rb_serial_t ruby_vm_global_cvar_state = 1;
+rb_serial_t ruby_vm_inlined_functions = 0;
 
 static const struct rb_callcache vm_empty_cc = {
     .flags = T_IMEMO | (imemo_callcache << FL_USHIFT) | VM_CALLCACHE_UNMARKABLE,
@@ -522,7 +523,7 @@ rb_dtrace_setup(rb_execution_context_t *ec, VALUE klass, ID id,
 static VALUE
 vm_stat(int argc, VALUE *argv, VALUE self)
 {
-    static VALUE sym_constant_cache_invalidations, sym_constant_cache_misses, sym_class_serial, sym_global_cvar_state;
+    static VALUE sym_constant_cache_invalidations, sym_constant_cache_misses, sym_class_serial, sym_global_cvar_state, sym_inlined_functions;
     VALUE arg = Qnil;
     VALUE hash = Qnil, key = Qnil;
 
@@ -544,6 +545,7 @@ vm_stat(int argc, VALUE *argv, VALUE self)
     S(constant_cache_misses);
 	S(class_serial);
 	S(global_cvar_state);
+	S(inlined_functions);
 #undef S
 
 #define SET(name, attr) \
@@ -556,6 +558,7 @@ vm_stat(int argc, VALUE *argv, VALUE self)
     SET(constant_cache_misses, ruby_vm_constant_cache_misses);
     SET(class_serial, ruby_vm_class_serial);
     SET(global_cvar_state, ruby_vm_global_cvar_state);
+    SET(inlined_functions, ruby_vm_inlined_functions);
 #undef SET
 
     if (!NIL_P(key)) { /* matched key should return above */

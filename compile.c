@@ -50,6 +50,8 @@
 #define FIXNUM_INC(n, i) ((n)+(INT2FIX(i)&~FIXNUM_FLAG))
 #define FIXNUM_OR(n, i) ((n)|INT2FIX(i))
 
+extern rb_serial_t ruby_vm_inlined_functions;
+
 typedef struct iseq_link_element {
     enum {
 	ISEQ_ELEMENT_ANCHOR,
@@ -748,21 +750,8 @@ struct inline_context {
     LABEL * leave_label;
     unsigned int caller_local_size;
     unsigned int local_increase;
+    st_table * labels;
 };
-
-static int
-find_callee_iseq_sizes(VALUE *code, size_t pos, iseq_value_itr_t * func, void *accumulator, rb_vm_insns_translator_t * translator)
-{
-    VALUE insn_id = translator((void *)code[pos]);
-    int len = insn_len(insn_id);
-
-    if (insn_id == BIN(opt_send_without_block)) {
-        CALL_DATA cd = (CALL_DATA)code[pos + 1];
-        unsigned int callee_size = cd->cc->cme_->def->body.iseq.iseqptr->body->iseq_size;
-        *(unsigned int *)accumulator += callee_size;
-    }
-    return len;
-}
 
 static INSN * new_insn_core(rb_iseq_t *iseq, const NODE *line_node, int insn_id, int argc, VALUE *argv);
 
@@ -9956,6 +9945,10 @@ insn_data_to_s_detail(INSN *iobj)
               case TS_CALLDATA: /* we store these as call infos at compile time */
 		{
                     const struct rb_callinfo *ci = (struct rb_callinfo *)OPERAND_AT(iobj, j);
+                    if (IS_INSN_ID(iobj, jump_if_cache_miss)) {
+                        ci = ((CALL_DATA)ci)->ci;
+                    }
+
                     rb_str_cat2(str, "<calldata:");
                     if (vm_ci_mid(ci)) rb_str_catf(str, "%"PRIsVALUE, rb_id2str(vm_ci_mid(ci)));
                     rb_str_catf(str, ", %d>", vm_ci_argc(ci));
@@ -13051,14 +13044,22 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
 
     NODE dummy_line_node = generate_dummy_line_node(0, -1);
 
+    LABEL * current_label = 0;
+
+    if (st_lookup(ctx->labels, pos, (st_data_t *)&current_label)) {
+        ADD_LABEL(code_list_root, current_label);
+    }
+
     // Any time we find a method call
     if (ctx->depth == 0 && insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
+        const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
+
         // Convert the method call in to a linked list of the instructions
         // inside the method
         // Callee's iseq body
-        if (cd->cc->cme_->def->type == VM_METHOD_TYPE_ISEQ) {
+        if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ) {
             const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
             const struct rb_iseq_constant_body *const body = callee_iseq->body;
 
@@ -13073,12 +13074,16 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
 
             LABEL * leave_label = NEW_LABEL(0);
 
-            struct inline_context next_ctx;
-            next_ctx.iseq = iseq;
-            next_ctx.caller_locals = ctx->caller_locals;
-            next_ctx.code_list_root = code_list_root;
-            next_ctx.depth = ctx->depth + 1;
-            next_ctx.leave_label = leave_label;
+            // Increase depth
+            ctx->depth++;
+
+            // save the old leave label and label table
+            LABEL * old_leave = ctx->leave_label;
+            st_table * old_labels = ctx->labels;
+
+            // Make new label and table
+            ctx->leave_label = leave_label;
+            ctx->labels = st_init_numtable();
 
             for (unsigned int i = 0; i < vm_ci_argc(cd->ci); i++) {
                 ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(i + VM_ENV_DATA_SIZE), INT2NUM(0));
@@ -13088,10 +13093,19 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             ADD_INSN(code_list_root, &dummy_line_node, pop);
 
             for (size_t n = 0; n < size;) {
-                n += inline_iseqs(callee_code, n, NULL, &next_ctx, translator);
+                n += inline_iseqs(callee_code, n, NULL, _ctx, translator);
             }
 
             ADD_LABEL(code_list_root, leave_label);
+
+            st_free_table(ctx->labels);
+
+            // Put everything back
+            ctx->labels = old_labels;
+            ctx->leave_label = old_leave;
+            ctx->depth--;
+
+            ruby_vm_inlined_functions++;
         }
         else {
             iseq->body->ci_size++;
@@ -13100,6 +13114,8 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     }
     else {
         VALUE * ops = NULL;
+
+        // If the instruction has any parameters, we need to translate them
         if (len - 1 > 0) {
             ops = compile_data_alloc2(iseq, sizeof(VALUE), len - 1);
             // Copy operands embedded in the iseq in to our node ops buffer
@@ -13110,6 +13126,19 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
                       iseq->body->ci_size++;
                       ops[i] = (VALUE)(((CALL_DATA)code[pos + i + 1])->ci);
                       break;
+                  case TS_OFFSET:
+                      {
+                          LABEL * jump_label;
+                          unsigned long code_offset = pos + len + code[pos + i + 1];
+                          if (!st_lookup(ctx->labels, code_offset, (st_data_t *)&jump_label)) {
+                              jump_label = NEW_LABEL(0);
+                              fprintf(stderr, "iseq %p insn %s adding label %p offset: %d \n", iseq, insn_name(insn_id), jump_label, code_offset);
+                              st_insert(ctx->labels, code_offset, (st_data_t)jump_label);
+                              st_lookup(ctx->labels, code_offset, (st_data_t *)&current_label);
+                          }
+                          ops[i] = jump_label;
+                      }
+                      break;
                   case TS_LINDEX:
                   case TS_NUM:	/* ulong */
                       // Convert back to a Ruby object so that the assembler
@@ -13118,6 +13147,13 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
                       break;
                   case TS_ID:
                       ops[i] = ID2SYM(code[pos + i + 1]);
+                      break;
+                  case TS_IC: /* inline cache */
+                  case TS_ISE: /* inline storage entry */
+                  case TS_ICVARC: /* inline cvar cache */
+                  case TS_IVC: /* inline ivar cache */
+                      ops[i] = INT2FIX(iseq->body->is_size);
+                      iseq->body->is_size++;
                       break;
                   default:
                       ops[i] = code[pos + i + 1];
@@ -13140,25 +13176,44 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     return len;
 }
 
+bool rb_simple_iseq_p(const rb_iseq_t *iseq);
+
+struct iseq_inline_expansion_info {
+    unsigned int max_locals;
+    unsigned int inlineable_calls;
+};
+
 static int
 find_max_local_table(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator)
 {
     int insn_id = (int)translator((void *)code[pos]);
     int len = insn_len(insn_id);
+    struct iseq_inline_expansion_info * info = (struct iseq_inline_expansion_info *)_ctx;
+
+    if (insn_id == BIN(send)) {
+        CALL_DATA cd = (CALL_DATA)code[pos + 1];
+        ISEQ blockiseq = (ISEQ)code[pos + 2];
+        if (blockiseq) {
+            fprintf(stderr, "hi mom! %d\n", rb_simple_iseq_p(blockiseq));
+        }
+    }
 
     // Any time we find a method call
     if (insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
+        const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
+
         // Convert the method call in to a linked list of the instructions
         // inside the method
         // Callee's iseq body
-        if (cd->cc->cme_->def->type == VM_METHOD_TYPE_ISEQ) {
-            const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
+        if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ) {
+            const rb_iseq_t * callee_iseq = cme->def->body.iseq.iseqptr;
             unsigned int local_table_size = callee_iseq->body->local_table_size;
+            info->inlineable_calls++;
 
-            if (local_table_size + 1 > *(unsigned int *)_ctx) {
-                *(unsigned int *)_ctx = local_table_size + 1;
+            if (local_table_size > info->max_locals) {
+                info->max_locals = local_table_size;
             }
         }
     }
@@ -13179,7 +13234,10 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
         rb_vm_insn_null_translator;
 
     const struct rb_iseq_constant_body *const body = original_iseq->body;
-    unsigned int max_locals = 0;
+
+    struct iseq_inline_expansion_info info;
+    info.max_locals = original_iseq->body->local_table_size;
+    info.inlineable_calls = 0;
 
     size = body->iseq_size;
     code = body->iseq_encoded;
@@ -13188,11 +13246,11 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     // Scan the instructions looking for method calls, then record the
     // *maximum* number of parameters to the method
     for (n = 0; n < size;) {
-	n += find_max_local_table(code, n, NULL, &max_locals, translator);
+	n += find_max_local_table(code, n, NULL, &info, translator);
     }
 
     // There's nothing to inline
-    if (max_locals == 0) {
+    if (info.inlineable_calls == 0) {
         return NULL;
     }
 
@@ -13215,11 +13273,15 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     ctx.depth = 0;
     ctx.caller_local_size = original_iseq->body->local_table_size;
     ctx.local_increase = 0;
+    ctx.labels = st_init_numtable();
 
     // Copy everything to new_buffer
     for (n = 0; n < size;) {
 	n += inline_iseqs(code, n, NULL, &ctx, translator);
     }
+
+    // I think we can remove "local_increase"
+    assert(ctx.local_increase == (info.max_locals - original_iseq->body->local_table_size));
 
     CHECK(iseq_setup_insn(iseq, code_list_root));
     iseq_setup(iseq, code_list_root);
@@ -13237,6 +13299,8 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
         iseq->body->local_table = original_iseq->body->local_table;
         iseq->body->local_table_size = original_iseq->body->local_table_size;
     }
+
+    st_free_table(ctx.labels);
 
     return iseq;
 }
