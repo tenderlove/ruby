@@ -791,7 +791,6 @@ jump_if_cache_miss
 ()
 {
     VALUE recv = TOPN(vm_ci_argc(cd->ci));
-
     if (LIKELY(vm_cc_class_check(cd->cc, CLASS_OF(recv)))) {
         if (LIKELY(!METHOD_ENTRY_INVALIDATED(vm_cc_cme(cd->cc)))) {
             RB_DEBUG_COUNTER_INC(mc_inline_hit);
@@ -802,6 +801,7 @@ jump_if_cache_miss
         }
     }
     else {
+        printf("cache miss!\n");
         RB_DEBUG_COUNTER_INC(mc_inline_miss_klass);
         JUMP(dst);
     }

@@ -467,7 +467,9 @@ rb_iseq_mark(const rb_iseq_t *iseq)
         if (FL_TEST((VALUE)iseq, ISEQ_MARKABLE_ISEQ)) {
 	    rb_iseq_each_value(iseq, each_insn_value, NULL);
 	}
-
+        if (body->param.flags.inlined_iseq) {
+            rb_gc_mark(body->original_iseq);
+        }
         rb_gc_mark_movable(body->variable.coverage);
         rb_gc_mark_movable(body->variable.pc2branchindex);
         rb_gc_mark_movable(body->variable.script_lines);

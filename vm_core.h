@@ -466,6 +466,7 @@ struct rb_iseq_constant_body {
     struct rb_mjit_unit *jit_unit;
 #endif
 
+    rb_iseq_t *original_iseq;
 #if USE_YJIT
     // YJIT stores some data on each iseq.
     // Note: Cannot use YJIT_BUILD here since yjit.h includes this header.

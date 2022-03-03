@@ -13314,6 +13314,8 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     }
 
     fprintf(stderr, "original size: %d new size %d\n", original_iseq->body->local_table_size, info.max_locals);
+    iseq->body->original_iseq = original_iseq;
+    RB_OBJ_WRITTEN(iseq, Qundef, original_iseq);
 
     CHECK(iseq_setup_insn(iseq, code_list_root));
     iseq_setup(iseq, code_list_root);
