@@ -798,11 +798,11 @@ jump_if_cache_miss
             fprintf(stderr, "hit!\n");
         }
         else {
-          fprintf(stderr, "guard miss 1!\n");
+          rb_bug("guard miss 1!\n");
         }
     }
     else {
-        fprintf(stderr, "guard miss 2!\n");
+        rb_bug("guard miss 2!\n");
         RB_DEBUG_COUNTER_INC(mc_inline_miss_klass);
     }
 }

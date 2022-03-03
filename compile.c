@@ -13029,6 +13029,19 @@ rb_iseq_ibf_load_extra_data(VALUE str)
 }
 
 rb_iseq_t * iseq_alloc_for_inlining(const rb_iseq_t *original_iseq);
+bool rb_simple_iseq_p(const rb_iseq_t *iseq);
+
+static bool
+inlineable_call(CALL_DATA cd)
+{
+    unsigned int flags = vm_ci_flag(cd->ci);
+    if (flags & VM_CALL_ARGS_SIMPLE) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
 
 static int
 inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator)
@@ -13054,58 +13067,61 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     if (ctx->depth == 0 && insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
-        const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
+        if (inlineable_call(cd)) {
+            const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
 
-        // Convert the method call in to a linked list of the instructions
-        // inside the method
-        // Callee's iseq body
-        if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ) {
-            const rb_iseq_t * callee_iseq = cd->cc->cme_->def->body.iseq.iseqptr;
-            const struct rb_iseq_constant_body *const body = callee_iseq->body;
+            // Convert the method call in to a linked list of the instructions
+            // inside the method
+            // Callee's iseq body
+            if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ && rb_simple_iseq_p(cme->def->body.iseq.iseqptr)) {
+                const rb_iseq_t * callee_iseq = cme->def->body.iseq.iseqptr;
+                const struct rb_iseq_constant_body *const body = callee_iseq->body;
 
-            if (ctx->local_increase < vm_ci_argc(cd->ci)) {
-                ctx->local_increase += (vm_ci_argc(cd->ci) - ctx->local_increase);
+                // Is the cache still valid?
+                ADD_INSN1(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
+
+                size_t size = body->iseq_size;
+                VALUE * callee_code = body->iseq_encoded;
+
+                LABEL * leave_label = NEW_LABEL(0);
+
+                // Increase depth
+                ctx->depth++;
+
+                // save the old leave label and label table
+                LABEL * old_leave = ctx->leave_label;
+                st_table * old_labels = ctx->labels;
+
+                // Make new label and table
+                ctx->leave_label = leave_label;
+                ctx->labels = st_init_numtable();
+
+                for (unsigned int i = 0; i < vm_ci_argc(cd->ci); i++) {
+                    ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(i + VM_ENV_DATA_SIZE), INT2NUM(0));
+                }
+
+                // Remove the receiver from the stack
+                ADD_INSN(code_list_root, &dummy_line_node, pop);
+
+                for (size_t n = 0; n < size;) {
+                    n += inline_iseqs(callee_code, n, NULL, _ctx, translator);
+                }
+
+                ADD_LABEL(code_list_root, leave_label);
+
+                st_free_table(ctx->labels);
+
+                // Put everything back
+                ctx->labels = old_labels;
+                ctx->leave_label = old_leave;
+                ctx->depth--;
+
+                ruby_vm_inlined_functions++;
             }
-            // Is the cache still valid?
-            ADD_INSN1(code_list_root, &dummy_line_node, jump_if_cache_miss, cd);
-
-            size_t size = body->iseq_size;
-            VALUE * callee_code = body->iseq_encoded;
-
-            LABEL * leave_label = NEW_LABEL(0);
-
-            // Increase depth
-            ctx->depth++;
-
-            // save the old leave label and label table
-            LABEL * old_leave = ctx->leave_label;
-            st_table * old_labels = ctx->labels;
-
-            // Make new label and table
-            ctx->leave_label = leave_label;
-            ctx->labels = st_init_numtable();
-
-            for (unsigned int i = 0; i < vm_ci_argc(cd->ci); i++) {
-                ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(i + VM_ENV_DATA_SIZE), INT2NUM(0));
+            else {
+                iseq->body->ci_size++;
+                ADD_INSN1(code_list_root, &dummy_line_node, opt_send_without_block, cd->ci);
             }
-
-            // Remove the receiver from the stack
-            ADD_INSN(code_list_root, &dummy_line_node, pop);
-
-            for (size_t n = 0; n < size;) {
-                n += inline_iseqs(callee_code, n, NULL, _ctx, translator);
-            }
-
-            ADD_LABEL(code_list_root, leave_label);
-
-            st_free_table(ctx->labels);
-
-            // Put everything back
-            ctx->labels = old_labels;
-            ctx->leave_label = old_leave;
-            ctx->depth--;
-
-            ruby_vm_inlined_functions++;
         }
         else {
             iseq->body->ci_size++;
@@ -13132,7 +13148,6 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
                           unsigned long code_offset = pos + len + code[pos + i + 1];
                           if (!st_lookup(ctx->labels, code_offset, (st_data_t *)&jump_label)) {
                               jump_label = NEW_LABEL(0);
-                              fprintf(stderr, "iseq %p insn %s adding label %p offset: %d \n", iseq, insn_name(insn_id), jump_label, code_offset);
                               st_insert(ctx->labels, code_offset, (st_data_t)jump_label);
                               st_lookup(ctx->labels, code_offset, (st_data_t *)&current_label);
                           }
@@ -13176,8 +13191,6 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     return len;
 }
 
-bool rb_simple_iseq_p(const rb_iseq_t *iseq);
-
 struct iseq_inline_expansion_info {
     unsigned int max_locals;
     unsigned int inlineable_calls;
@@ -13194,7 +13207,7 @@ find_max_local_table(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ct
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
         ISEQ blockiseq = (ISEQ)code[pos + 2];
         if (blockiseq) {
-            fprintf(stderr, "hi mom! %d\n", rb_simple_iseq_p(blockiseq));
+            // FIXME: Support inlining blocks
         }
     }
 
@@ -13202,18 +13215,20 @@ find_max_local_table(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ct
     if (insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
-        const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
+        if (inlineable_call(cd)) {
+            const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
 
-        // Convert the method call in to a linked list of the instructions
-        // inside the method
-        // Callee's iseq body
-        if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ) {
-            const rb_iseq_t * callee_iseq = cme->def->body.iseq.iseqptr;
-            unsigned int local_table_size = callee_iseq->body->local_table_size;
-            info->inlineable_calls++;
+            // Convert the method call in to a linked list of the instructions
+            // inside the method
+            // Callee's iseq body
+            if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ && rb_simple_iseq_p(cme->def->body.iseq.iseqptr)) {
+                const rb_iseq_t * callee_iseq = cme->def->body.iseq.iseqptr;
+                unsigned int local_table_size = callee_iseq->body->local_table_size;
+                info->inlineable_calls++;
 
-            if (local_table_size > info->max_locals) {
-                info->max_locals = local_table_size;
+                if (local_table_size > info->max_locals) {
+                    info->max_locals = local_table_size;
+                }
             }
         }
     }
@@ -13234,6 +13249,10 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
         rb_vm_insn_null_translator;
 
     const struct rb_iseq_constant_body *const body = original_iseq->body;
+
+    if (!rb_simple_iseq_p(original_iseq)) {
+        return NULL;
+    }
 
     struct iseq_inline_expansion_info info;
     info.max_locals = original_iseq->body->local_table_size;
@@ -13272,24 +13291,32 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     // depth
     ctx.depth = 0;
     ctx.caller_local_size = original_iseq->body->local_table_size;
-    ctx.local_increase = 0;
     ctx.labels = st_init_numtable();
+
+    const rb_code_location_t *loc = &body->location.code_location;
+
+    fprintf(stderr, "Inlining %s@%s:%d (%d,%d)-(%d,%d)\n",
+			  rb_str_to_cstr(body->location.label), rb_str_to_cstr(rb_iseq_path(original_iseq)),
+			  loc->beg_pos.lineno,
+			  loc->beg_pos.lineno,
+			  loc->beg_pos.column,
+			  loc->end_pos.lineno,
+			  loc->end_pos.column);
 
     // Copy everything to new_buffer
     for (n = 0; n < size;) {
 	n += inline_iseqs(code, n, NULL, &ctx, translator);
     }
 
-    // I think we can remove "local_increase"
-    assert(ctx.local_increase == (info.max_locals - original_iseq->body->local_table_size));
+    fprintf(stderr, "original size: %d new size %d\n", original_iseq->body->local_table_size, info.max_locals);
 
     CHECK(iseq_setup_insn(iseq, code_list_root));
     iseq_setup(iseq, code_list_root);
     iseq->body->param.size = original_iseq->body->param.size;
     iseq->body->param.lead_num = original_iseq->body->param.lead_num;
 
-    if (ctx.local_increase > 0) {
-        unsigned int local_size = original_iseq->body->local_table_size + ctx.local_increase;
+    if (info.max_locals > original_iseq->body->local_table_size) {
+        unsigned int local_size = info.max_locals;
         ID *ids = (ID *)ALLOC_N(ID, local_size);
         MEMCPY(ids, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
         iseq->body->local_table = ids;
