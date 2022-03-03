@@ -786,7 +786,7 @@ opt_send_without_block
 /* Invoke method without block */
 DEFINE_INSN
 jump_if_cache_miss
-(CALL_DATA cd)
+(CALL_DATA cd, OFFSET dst)
 ()
 ()
 {
@@ -795,15 +795,15 @@ jump_if_cache_miss
     if (LIKELY(vm_cc_class_check(cd->cc, CLASS_OF(recv)))) {
         if (LIKELY(!METHOD_ENTRY_INVALIDATED(vm_cc_cme(cd->cc)))) {
             RB_DEBUG_COUNTER_INC(mc_inline_hit);
-            fprintf(stderr, "hit!\n");
         }
         else {
-          rb_bug("guard miss 1!\n");
+            rb_bug("guard miss 1!\n");
+            JUMP(dst);
         }
     }
     else {
-        rb_bug("guard miss 2!\n");
         RB_DEBUG_COUNTER_INC(mc_inline_miss_klass);
+        JUMP(dst);
     }
 }
 
