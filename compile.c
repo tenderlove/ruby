@@ -744,11 +744,10 @@ rb_vm_insn_null_translator(const void *addr)
 
 struct inline_context {
     rb_iseq_t * iseq;
-    unsigned int caller_locals;
+    unsigned int caller_local_table_size;
     LINK_ANCHOR *code_list_root;
     unsigned int depth;
     LABEL * leave_label;
-    unsigned int caller_local_size;
     unsigned int local_increase;
     st_table * labels;
 };
@@ -13287,15 +13286,14 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     struct inline_context ctx;
     ctx.iseq = iseq; // Inlined iseq
 
-    // number of locals in the caller
-    ctx.caller_locals = original_iseq->body->local_table_size;
+    // Number of locals in the caller
+    ctx.caller_local_table_size = original_iseq->body->local_table_size;
 
     // Linked list for building the inlined method
     ctx.code_list_root = code_list_root;
 
     // depth
     ctx.depth = 0;
-    ctx.caller_local_size = original_iseq->body->local_table_size;
     ctx.labels = st_init_numtable();
 
     const rb_code_location_t *loc = &body->location.code_location;
