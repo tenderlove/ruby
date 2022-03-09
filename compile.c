@@ -13199,6 +13199,10 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             int idx = NUM2INT(OPERAND_AT(insn, 0)) + ctx->callee_local_table_size;
             insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2FIX(idx), OPERAND_AT(insn, 1));
         }
+        if (ctx->depth > 0 && IS_INSN_ID(insn, putself)) {
+            insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2FIX(ctx->self_index + VM_ENV_DATA_SIZE), INT2NUM(0));
+        }
+
         ADD_ELEM(code_list_root, (LINK_ELEMENT *)insn);
     }
 
