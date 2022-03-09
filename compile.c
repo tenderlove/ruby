@@ -745,6 +745,7 @@ rb_vm_insn_null_translator(const void *addr)
 struct inline_context {
     rb_iseq_t * iseq;
     unsigned int caller_local_table_size;
+    unsigned int callee_local_table_size;
     LINK_ANCHOR *code_list_root;
     unsigned int depth;
     LABEL * leave_label;
@@ -13259,7 +13260,7 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     }
 
     struct iseq_inline_expansion_info info;
-    info.max_locals = original_iseq->body->local_table_size;
+    info.max_locals = 0;
     info.inlineable_calls = 0;
 
     size = body->iseq_size;
@@ -13286,8 +13287,9 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     struct inline_context ctx;
     ctx.iseq = iseq; // Inlined iseq
 
-    // Number of locals in the caller
+    // Number of locals in the caller and callee
     ctx.caller_local_table_size = original_iseq->body->local_table_size;
+    ctx.callee_local_table_size = info.max_locals;
 
     // Linked list for building the inlined method
     ctx.code_list_root = code_list_root;
@@ -13311,7 +13313,6 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
 	n += inline_iseqs(code, n, NULL, &ctx, translator);
     }
 
-    fprintf(stderr, "original size: %d new size %d\n", original_iseq->body->local_table_size, info.max_locals);
     iseq->body->original_iseq = original_iseq;
     RB_OBJ_WRITTEN(iseq, Qundef, original_iseq);
 
@@ -13320,17 +13321,12 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     iseq->body->param.size = original_iseq->body->param.size;
     iseq->body->param.lead_num = original_iseq->body->param.lead_num;
 
-    if (info.max_locals > original_iseq->body->local_table_size) {
-        unsigned int local_size = info.max_locals;
-        ID *ids = (ID *)ALLOC_N(ID, local_size);
-        MEMCPY(ids, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
-        iseq->body->local_table = ids;
-        iseq->body->local_table_size = local_size;
-    }
-    else {
-        iseq->body->local_table = original_iseq->body->local_table;
-        iseq->body->local_table_size = original_iseq->body->local_table_size;
-    }
+    unsigned int local_size = ctx.callee_local_table_size + ctx.caller_locals;
+    fprintf(stderr, "original size: %d new size %d\n", original_iseq->body->local_table_size, local_size);
+    ID *ids = (ID *)ALLOC_N(ID, local_size);
+    MEMCPY(ids, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
+    iseq->body->local_table = ids;
+    iseq->body->local_table_size = local_size;
 
     st_free_table(ctx.labels);
 
