@@ -13321,7 +13321,7 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     iseq->body->param.size = original_iseq->body->param.size;
     iseq->body->param.lead_num = original_iseq->body->param.lead_num;
 
-    unsigned int local_size = ctx.callee_local_table_size + ctx.caller_locals;
+    unsigned int local_size = ctx.callee_local_table_size + ctx.caller_local_table_size;
     fprintf(stderr, "original size: %d new size %d\n", original_iseq->body->local_table_size, local_size);
     ID *ids = (ID *)ALLOC_N(ID, local_size);
     MEMCPY(ids, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
