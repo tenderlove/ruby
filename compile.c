@@ -13185,20 +13185,20 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
         }
         INSN * insn = new_insn_core(iseq, &dummy_line_node, insn_id, len - 1, ops);
         insn = insn_operands_separate(iseq, &dummy_line_node, insn);
+
+        // Translate leave to jump in the callee
         if (ctx->depth > 0 && IS_INSN_ID(insn, leave)) {
             insn = new_insn_body(iseq, &dummy_line_node, BIN(jump), 1, ctx->leave_label);
             LABEL_REF(ctx->leave_label);
         }
-        if (ctx->depth > 0 && IS_INSN_ID(insn, getlocal)) {
-            insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, OPERAND_AT(insn, 0), OPERAND_AT(insn, 1));
-        }
-        if (ctx->depth > 0 && IS_INSN_ID(insn, setlocal)) {
-            insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2FIX(ctx->self_index + VM_ENV_DATA_SIZE), INT2NUM(0));
-        }
+
+        // Adjust the index of locals in the caller
         if (ctx->depth == 0 && IS_INSN_ID(insn, getlocal)) {
             int idx = NUM2INT(OPERAND_AT(insn, 0)) + ctx->callee_local_table_size;
             insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2FIX(idx), OPERAND_AT(insn, 1));
         }
+
+        // Convert putself into getlocal in the callee
         if (ctx->depth > 0 && IS_INSN_ID(insn, putself)) {
             insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2FIX(ctx->self_index + VM_ENV_DATA_SIZE), INT2NUM(0));
         }
