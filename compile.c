@@ -13036,7 +13036,10 @@ static bool
 inlineable_call(CALL_DATA cd)
 {
     unsigned int flags = vm_ci_flag(cd->ci);
-    if (flags & VM_CALL_ARGS_SIMPLE) {
+    const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
+
+    // Only inline simple and leaf functions
+    if (flags & VM_CALL_ARGS_SIMPLE && cme->def->body.iseq.iseqptr->body->builtin_inline_p) {
         return true;
     }
     else {
