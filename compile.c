@@ -13033,6 +13033,27 @@ rb_iseq_t * iseq_alloc_for_inlining(const rb_iseq_t *original_iseq);
 bool rb_simple_iseq_p(const rb_iseq_t *iseq);
 
 static bool
+contains_method_calls(VALUE *code, size_t size, rb_vm_insns_translator_t * translator)
+{
+    int n = 0;
+
+    // Scan the instructions looking for method calls
+    for (n = 0; n < size;) {
+        int insn_id = (int)translator((void *)code[n]);
+        int len = insn_len(insn_id);
+
+        // Any time we find a method call
+        if (insn_id == BIN(opt_send_without_block)) {
+            return true;
+        }
+
+        n += len;
+    }
+
+    return false;
+}
+
+static bool
 inlineable_call(CALL_DATA cd)
 {
     unsigned int flags = vm_ci_flag(cd->ci);
