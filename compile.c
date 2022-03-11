@@ -13054,18 +13054,28 @@ contains_method_calls(VALUE *code, size_t size, rb_vm_insns_translator_t * trans
 }
 
 static bool
-inlineable_call(CALL_DATA cd)
+inlineable_call(CALL_DATA cd, rb_vm_insns_translator_t * translator)
 {
     unsigned int flags = vm_ci_flag(cd->ci);
     const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
 
-    // Only inline simple and leaf functions
-    if (flags & VM_CALL_ARGS_SIMPLE && cme->def->body.iseq.iseqptr->body->builtin_inline_p) {
-        return true;
+    if (cme) {
+        const rb_iseq_t * callee_iseq = cme->def->body.iseq.iseqptr;
+        VALUE * callee_iseq_code = callee_iseq->body->iseq_encoded;
+        size_t callee_iseq_size = callee_iseq->body->iseq_size;
+        bool contain_method_call = contains_method_calls(callee_iseq_code, callee_iseq_size, translator);
+
+        // A leaf method is a method with the builtin inline flag set
+        // or a method that doesn't contain a method call
+        bool is_leaf_method = callee_iseq->body->builtin_inline_p || !contain_method_call;
+
+        // Only inline simple and leaf methods
+        if (flags & VM_CALL_ARGS_SIMPLE && is_leaf_method) {
+            return true;
+        }
     }
-    else {
-        return false;
-    }
+
+    return false;
 }
 
 static int
@@ -13092,7 +13102,7 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
     if (ctx->depth == 0 && insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
-        if (inlineable_call(cd)) {
+        if (inlineable_call(cd, translator)) {
             const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
 
             // Convert the method call in to a linked list of the instructions
@@ -13257,7 +13267,7 @@ find_max_local_table(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ct
     if (insn_id == BIN(opt_send_without_block)) {
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
-        if (inlineable_call(cd)) {
+        if (inlineable_call(cd, translator)) {
             const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
 
             // Convert the method call in to a linked list of the instructions
