@@ -13067,7 +13067,8 @@ inlineable_call(CALL_DATA cd, rb_vm_insns_translator_t * translator)
 
         // A leaf method is a method with the builtin inline flag set
         // or a method that doesn't contain a method call
-        bool is_leaf_method = callee_iseq->body->builtin_inline_p || !contain_method_call;
+        // or a method that was previously inlined
+        bool is_leaf_method = callee_iseq->body->builtin_inline_p || !contain_method_call || callee_iseq->body->param.flags.inlined_iseq;
 
         // Only inline simple and leaf methods
         if (flags & VM_CALL_ARGS_SIMPLE && is_leaf_method) {
