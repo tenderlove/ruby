@@ -13181,8 +13181,14 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
                 char type = opnd_types[i];
                 switch (type) {
                   case TS_CALLDATA:
-                      iseq->body->ci_size++;
-                      ops[i] = (VALUE)(((CALL_DATA)code[pos + i + 1])->ci);
+                        if (insn_id == BIN(jump_if_cache_miss)) {
+                            // Reuse existing cache
+                            ops[i] = (VALUE)(((CALL_DATA)code[pos + i + 1]));
+                        }
+                        else {
+                            iseq->body->ci_size++;
+                            ops[i] = (VALUE)(((CALL_DATA)code[pos + i + 1])->ci);
+                        }
                       break;
                   case TS_OFFSET:
                       {
