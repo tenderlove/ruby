@@ -13294,7 +13294,8 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
         insn = insn_operands_separate(iseq, &dummy_line_node, insn);
 
         if (ctx->depth > 0 && IS_INSN_ID(insn, invokeblock)) {
-            // FIXME: inline the block iseqs here
+            // FIXME: Set the leave label here so the blocks will jump to
+            // the right place on leave
             fprintf(stderr, "we need to inline the block: %p\n", ctx->block);
             VALUE * callee_code = ctx->block->body->iseq_encoded;
             for (size_t n = 0; n < ctx->block->body->iseq_size;) {
