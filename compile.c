@@ -13226,7 +13226,9 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             rb_iseq_t * block = (rb_iseq_t *)code[pos + 2];
             rb_iseq_t * old_block = ctx->block;
             ctx->block = block;
+            ADD_INSN(code_list_root, &dummy_line_node, nop);
             inline_send(code_list_root, cd, iseq, _ctx);
+            ADD_INSN(code_list_root, &dummy_line_node, nop);
             ctx->block = old_block;
         }
         else {
@@ -13294,6 +13296,10 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
         if (ctx->depth > 0 && IS_INSN_ID(insn, invokeblock)) {
             // FIXME: inline the block iseqs here
             fprintf(stderr, "we need to inline the block: %p\n", ctx->block);
+            VALUE * callee_code = ctx->block->body->iseq_encoded;
+            for (size_t n = 0; n < ctx->block->body->iseq_size;) {
+                n += inline_iseqs(callee_code, n, NULL, _ctx, rb_vm_insn_translator_for(ctx->block));
+            }
         }
         else {
             // Translate leave to jump in the callee
