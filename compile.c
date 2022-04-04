@@ -13458,8 +13458,8 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     unsigned int local_size = ctx.callee_local_table_size + ctx.caller_local_table_size;
     fprintf(stderr, "original size: %d new size %d\n", original_iseq->body->local_table_size, local_size);
     ID *ids = (ID *)ALLOC_N(ID, local_size);
-    ids[0] = rb_intern("_self");
-    MEMCPY(ids[1], original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
+    ids[0] = rb_intern("_receiver");
+    MEMCPY(ids + 1, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
     iseq->body->local_table = ids;
     iseq->body->local_table_size = local_size;
 
