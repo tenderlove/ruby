@@ -13296,11 +13296,32 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
         if (ctx->depth > 0 && IS_INSN_ID(insn, invokeblock)) {
             // FIXME: Set the leave label here so the blocks will jump to
             // the right place on leave
-            fprintf(stderr, "we need to inline the block: %p\n", ctx->block);
+            LABEL * leave_label = NEW_LABEL(0);
+
+            // Increase depth
+            ctx->depth++;
+
+            // save the old leave label and label table
+            LABEL * old_leave = ctx->leave_label;
+            st_table * old_labels = ctx->labels;
+
+            // Make new label and table
+            ctx->leave_label = leave_label;
+            ctx->labels = st_init_numtable();
+
             VALUE * callee_code = ctx->block->body->iseq_encoded;
             for (size_t n = 0; n < ctx->block->body->iseq_size;) {
                 n += inline_iseqs(callee_code, n, NULL, _ctx, rb_vm_insn_translator_for(ctx->block));
             }
+
+            ADD_LABEL(code_list_root, leave_label);
+
+            st_free_table(ctx->labels);
+
+            // Put everything back
+            ctx->labels = old_labels;
+            ctx->leave_label = old_leave;
+            ctx->depth--;
         }
         else {
             // Translate leave to jump in the callee
