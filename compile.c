@@ -13125,7 +13125,7 @@ static int
 inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm_insns_translator_t * translator);
 
 static void
-inline_send(LINK_ANCHOR *code_list_root, CALL_DATA cd, rb_iseq_t *iseq, void *_ctx)
+inline_send(LINK_ANCHOR *code_list_root, int insn_id, CALL_DATA cd, rb_iseq_t *block, rb_iseq_t *iseq, void *_ctx)
 {
     const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
     struct inline_context * ctx = (struct inline_context *)_ctx;
@@ -13172,7 +13172,14 @@ inline_send(LINK_ANCHOR *code_list_root, CALL_DATA cd, rb_iseq_t *iseq, void *_c
 
     ADD_LABEL(code_list_root, cache_miss_label);
     iseq->body->ci_size++;
-    ADD_INSN1(code_list_root, &dummy_line_node, opt_send_without_block, cd->ci);
+
+    // Cache miss case
+    if (block) {
+        ADD_INSN2(code_list_root, &dummy_line_node, send, cd->ci, block);
+    }
+    else {
+        ADD_INSN1(code_list_root, &dummy_line_node, opt_send_without_block, cd->ci);
+    }
 
     ADD_LABEL(code_list_root, leave_label);
 
@@ -13211,7 +13218,7 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
         CALL_DATA cd = (CALL_DATA)code[pos + 1];
 
         if (inlineable_opt_send_without_block(cd, translator)) {
-            inline_send(code_list_root, cd, iseq, _ctx);
+            inline_send(code_list_root, insn_id, cd, NULL, iseq, _ctx);
         }
         else {
             iseq->body->ci_size++;
@@ -13227,7 +13234,7 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             rb_iseq_t * old_block = ctx->block;
             ctx->block = block;
             ADD_INSN(code_list_root, &dummy_line_node, nop);
-            inline_send(code_list_root, cd, iseq, _ctx);
+            inline_send(code_list_root, insn_id, cd, block, iseq, _ctx);
             ADD_INSN(code_list_root, &dummy_line_node, nop);
             ctx->block = old_block;
         }
@@ -13294,8 +13301,6 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
         insn = insn_operands_separate(iseq, &dummy_line_node, insn);
 
         if (ctx->depth > 0 && IS_INSN_ID(insn, invokeblock)) {
-            // FIXME: Set the leave label here so the blocks will jump to
-            // the right place on leave
             LABEL * leave_label = NEW_LABEL(0);
 
             // Increase depth
