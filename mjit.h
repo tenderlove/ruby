@@ -169,6 +169,7 @@ mjit_exec(rb_execution_context_t *ec)
         const rb_iseq_t * iseq = def_iseq_ptr(cme->def);
         rb_iseq_t * new_iseq = rb_inline_callee_iseqs(iseq);
 
+        // Redefine method with inlined instructions
         if (new_iseq) {
           // Clone existing method
           const rb_method_entry_t * new_cme = rb_method_entry_clone((const rb_method_entry_t *)cme);

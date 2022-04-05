@@ -2653,6 +2653,19 @@ iseqw_each_child(VALUE self)
     return self;
 }
 
+static VALUE
+iseqw_inline(VALUE self)
+{
+    const rb_iseq_t *iseq = iseqw_check(self);
+    rb_iseq_t * new_iseq = rb_inline_callee_iseqs(iseq);
+    if (new_iseq) {
+        return iseqw_new(new_iseq);
+    }
+    else {
+        return Qnil;
+    }
+}
+
 static void
 push_event_info(const rb_iseq_t *iseq, rb_event_flag_t events, int line, VALUE ary)
 {
@@ -3958,6 +3971,7 @@ Init_ISeq(void)
     rb_define_method(rb_cISeq, "first_lineno", iseqw_first_lineno, 0);
     rb_define_method(rb_cISeq, "trace_points", iseqw_trace_points, 0);
     rb_define_method(rb_cISeq, "each_child", iseqw_each_child, 0);
+    rb_define_method(rb_cISeq, "inline", iseqw_inline, 0);
 
 #if 0 /* TBD */
     rb_define_private_method(rb_cISeq, "marshal_dump", iseqw_marshal_dump, 0);
