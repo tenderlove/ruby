@@ -13081,7 +13081,7 @@ inlineable_send(CALL_DATA cd, rb_vm_insns_translator_t * translator)
         bool is_leaf_method = callee_iseq->body->builtin_inline_p || !contain_method_call || callee_iseq->body->param.flags.inlined_iseq;
 
         // Only inline simple and leaf methods
-        if (flags & VM_CALL_FCALL && is_leaf_method) {
+        if ((!flags || (flags & VM_CALL_FCALL)) && is_leaf_method) {
             return true;
         }
     }
