@@ -13158,12 +13158,14 @@ inline_send(LINK_ANCHOR *code_list_root, int insn_id, CALL_DATA cd, rb_iseq_t *b
     ctx->leave_label = leave_label;
     ctx->labels = st_init_numtable();
 
+    int slide = callee_iseq->body->local_table_size - vm_ci_argc(cd->ci);
+
     for (unsigned int i = 0; i < vm_ci_argc(cd->ci); i++) {
-        ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(i + VM_ENV_DATA_SIZE), INT2NUM(0));
+        ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(i + slide + VM_ENV_DATA_SIZE), INT2NUM(0));
     }
 
     // Store self as a local
-    ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(vm_ci_argc(cd->ci) + VM_ENV_DATA_SIZE), INT2NUM(0));
+    ADD_INSN2(code_list_root, &dummy_line_node, setlocal, INT2FIX(vm_ci_argc(cd->ci) + slide + VM_ENV_DATA_SIZE), INT2NUM(0));
     ctx->self_index = vm_ci_argc(cd->ci);
 
     for (size_t n = 0; n < size;) {
@@ -13242,7 +13244,7 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             iseq->body->ci_size++;
             ADD_INSN2(code_list_root, &dummy_line_node, send, cd->ci, code[pos + 2]);
         }
-   }
+    }
     else {
         VALUE * ops = NULL;
 
@@ -13339,6 +13341,12 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
             if (ctx->depth == 0 && IS_INSN_ID(insn, getlocal)) {
                 int idx = NUM2INT(OPERAND_AT(insn, 0)) + ctx->callee_local_table_size;
                 insn = new_insn_body(iseq, &dummy_line_node, BIN(getlocal), 2, INT2FIX(idx), OPERAND_AT(insn, 1));
+            }
+
+            // Adjust the index of locals in the caller
+            if (ctx->depth == 0 && IS_INSN_ID(insn, setlocal)) {
+                int idx = NUM2INT(OPERAND_AT(insn, 0)) + ctx->callee_local_table_size;
+                insn = new_insn_body(iseq, &dummy_line_node, BIN(setlocal), 2, INT2FIX(idx), OPERAND_AT(insn, 1));
             }
 
             // Convert putself into getlocal in the callee
@@ -13484,8 +13492,8 @@ rb_inline_callee_iseqs(const rb_iseq_t * original_iseq)
     unsigned int local_size = ctx.callee_local_table_size + ctx.caller_local_table_size;
     fprintf(stderr, "original size: %d new size %d\n", original_iseq->body->local_table_size, local_size);
     ID *ids = (ID *)ALLOC_N(ID, local_size);
-    ids[0] = rb_intern("_receiver");
-    MEMCPY(ids + 1, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
+    MEMCPY(ids, original_iseq->body->local_table, ID, original_iseq->body->local_table_size);
+    ids[original_iseq->body->local_table_size] = rb_intern("_receiver");
     iseq->body->local_table = ids;
     iseq->body->local_table_size = local_size;
 
