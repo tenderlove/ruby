@@ -13096,14 +13096,15 @@ inlineable_opt_send_without_block(CALL_DATA cd, rb_vm_insns_translator_t * trans
     const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cd->cc);
 
     if (cme) {
-        const rb_iseq_t * callee_iseq = cme->def->body.iseq.iseqptr;
-        VALUE * callee_iseq_code = callee_iseq->body->iseq_encoded;
-        size_t callee_iseq_size = callee_iseq->body->iseq_size;
-
         // Only inline methods that are type ISEQ and are simple
         if (!(cme->def->type == VM_METHOD_TYPE_ISEQ && rb_simple_iseq_p(cme->def->body.iseq.iseqptr))) {
             return false;
         }
+
+        const rb_iseq_t * callee_iseq = cme->def->body.iseq.iseqptr;
+        VALUE * callee_iseq_code = callee_iseq->body->iseq_encoded;
+        size_t callee_iseq_size = callee_iseq->body->iseq_size;
+
 
         bool contain_method_call = contains_method_calls(callee_iseq_code, callee_iseq_size, translator);
 
@@ -13273,6 +13274,24 @@ inline_iseqs(VALUE *code, size_t pos, iseq_value_itr_t * func, void *_ctx, rb_vm
                               jump_label = NEW_LABEL(0);
                               st_insert(ctx->labels, code_offset, (st_data_t)jump_label);
                               st_lookup(ctx->labels, code_offset, (st_data_t *)&current_label);
+
+                              // Handle backwards jumps
+                              // Walk backwards through the linked list until we find
+                              // the jump location
+                              if (code_offset < (pos + i)) {
+                                  unsigned long roll_back = (pos + i + len) - code_offset;
+                                  unsigned long n = 0;
+                                  LINK_ELEMENT * curr = code_list_root->last;
+
+                                  while (n < roll_back) {
+                                      if (curr->type == ISEQ_ELEMENT_INSN) {
+                                          INSN * insn = (INSN *)curr;
+                                          n += (insn->operand_size + 1);
+                                      }
+                                      curr = curr->prev;
+                                  }
+                                  APPEND_ELEM(code_list_root, curr->prev, jump_label);
+                              }
                           }
                           ops[i] = jump_label;
                       }

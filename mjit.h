@@ -164,6 +164,10 @@ mjit_exec(rb_execution_context_t *ec)
 
       cme = rb_vm_frame_method_entry(ec->cfp);
 
+      // Is the current frame a block frame?  If so, we don't want to inline
+      if ((ec->cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_MAGIC_BLOCK) == VM_FRAME_MAGIC_BLOCK) {
+        return Qundef;
+      }
       // online inline Ruby methods
       if (cme && cme->def->type == VM_METHOD_TYPE_ISEQ) {
         const rb_iseq_t * iseq = def_iseq_ptr(cme->def);
