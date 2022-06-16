@@ -3534,6 +3534,55 @@ vm_keep_script_lines_set(VALUE self, VALUE flags)
     return flags;
 }
 
+/*
+ * call-seq:
+ *    RubyVM.instruction_operands
+ *
+ * A list of operands for each instruction.  Each element of the array returned
+ * corresponds to the list of operands for the instruction at the same index
+ * in the ::RubyVM::INSTRUCTION_NAMES constant.
+ *
+ * For example the instruction at index 5 in the ::RubyVM::INSTRUCTION_NAMES
+ * list has the operands stored at index 5 in the array returned from this method.
+ * This method is MRI specific.
+ */
+static VALUE
+insn_operands(VALUE self)
+{
+    VALUE ary = rb_ary_new_capa(VM_INSTRUCTION_SIZE);
+    int i;
+    for (i = 0; i < VM_INSTRUCTION_SIZE; i++) {
+        VALUE opnds = rb_ary_new();
+        const char *types = insn_op_types(i);
+
+        for (int op_no = 0; types[op_no]; op_no++) {
+            enum ruby_insn_type_chars type = types[op_no];
+            switch(type) {
+#define CASE_TYPE(t) case TS_ ## t: rb_ary_push(opnds, ID2SYM(rb_intern(#t))); break;
+                CASE_TYPE(VARIABLE);
+                CASE_TYPE(CALLDATA);
+                CASE_TYPE(CDHASH);
+                CASE_TYPE(IC);
+                CASE_TYPE(IVC);
+                CASE_TYPE(ICVARC);
+                CASE_TYPE(ID);
+                CASE_TYPE(ISE);
+                CASE_TYPE(ISEQ);
+                CASE_TYPE(OFFSET);
+                CASE_TYPE(VALUE);
+                CASE_TYPE(LINDEX);
+                CASE_TYPE(FUNCPTR);
+                CASE_TYPE(NUM);
+                CASE_TYPE(BUILTIN);
+#undef CASE_TYPE
+            }
+        }
+        rb_obj_freeze(opnds);
+	rb_ary_push(ary, opnds);
+    }
+    return rb_obj_freeze(ary);
+}
+
 void
 Init_VM(void)
 {
@@ -3814,6 +3863,8 @@ Init_VM(void)
      * Of course, this constant is MRI specific.
      */
     rb_define_const(rb_cRubyVM, "DEFAULT_PARAMS", vm_default_params());
+
+    rb_define_singleton_method(rb_cRubyVM, "instruction_operands", insn_operands, 0);
 
     /* debug functions ::RubyVM::SDR(), ::RubyVM::NSDR() */
 #if VMDEBUG
