@@ -455,6 +455,41 @@ each_insn_value(void *ctx, VALUE obj)
     return obj;
 }
 
+static void
+verify_bit_table(const rb_iseq_t *iseq)
+{
+    rb_vm_insns_translator_t *const translator =
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+        (FL_TEST((VALUE)iseq, ISEQ_TRANSLATED)) ? rb_vm_insn_addr2insn2 :
+#endif
+        rb_vm_insn_null_translator;
+
+    const struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
+    unsigned int size = body->iseq_size;
+    VALUE * code = body->iseq_encoded;
+    iseq_bits_t * mark_bits = body->mark_offset_bits;
+
+    for (size_t pos = 0; pos < size;) {
+        VALUE insn = translator((void *)code[pos]);
+        const char *types = insn_op_types(insn);
+
+        pos++;
+
+        for (int op_no = 0; types[op_no]; op_no++, pos++) {
+            char type = types[op_no];
+            switch (type) {
+                case TS_CDHASH:
+                case TS_ISEQ:
+                case TS_VALUE:
+                    if (!SPECIAL_CONST_P(code[pos]) && !ISEQ_MBITS_SET_P(mark_bits, pos)) {
+                        rb_bug("bit should be set");
+                    }
+                    break;
+            }
+        }
+    }
+}
+
 void
 rb_iseq_mark(const rb_iseq_t *iseq)
 {
@@ -467,6 +502,7 @@ rb_iseq_mark(const rb_iseq_t *iseq)
 
         if (FL_TEST((VALUE)iseq, ISEQ_MARKABLE_ISEQ)) {
 	    rb_iseq_each_value(iseq, each_insn_value, NULL);
+            verify_bit_table(iseq);
 	}
 
         rb_gc_mark_movable(body->variable.coverage);

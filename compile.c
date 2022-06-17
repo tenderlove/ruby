@@ -2245,7 +2245,6 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     struct iseq_insn_info_entry *insns_info;
     struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
     unsigned int *positions;
-    unsigned long *mark_offset_bits;
     LINK_ELEMENT *list;
     VALUE *generated_iseq;
     rb_event_flag_t events = 0;
@@ -2337,7 +2336,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     // of the number if bits in an unsigned long.
 
     // Allocate enough room for the bitmask list
-    mark_offset_bits = ALLOC_N(unsigned long, ISEQ_MBITS_BUFLEN(code_index));
+    iseq_bits_t * mark_offset_bits = ALLOC_N(iseq_bits_t, ISEQ_MBITS_BUFLEN(code_index));
 
     list = FIRST_ELEMENT(anchor);
     insns_info_index = code_index = sp = 0;
@@ -11175,7 +11174,7 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
     struct rb_call_data *cd_entries = load_body->call_data;
     union iseq_inline_storage_entry *is_entries = load_body->is_entries;
 
-    unsigned long * mark_offset_bits = ALLOC_N(unsigned long, ISEQ_MBITS_BUFLEN(iseq_size));
+    iseq_bits_t * mark_offset_bits = ALLOC_N(iseq_bits_t, ISEQ_MBITS_BUFLEN(iseq_size));
     load_body->mark_offset_bits = mark_offset_bits;
 
     for (code_index=0; code_index<iseq_size;) {

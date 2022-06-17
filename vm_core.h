@@ -335,6 +335,8 @@ pathobj_realpath(VALUE pathobj)
 /* Forward declarations */
 struct rb_mjit_unit;
 
+typedef uintptr_t iseq_bits_t;
+
 struct rb_iseq_constant_body {
     enum iseq_type {
 	ISEQ_TYPE_TOP,
@@ -459,7 +461,7 @@ struct rb_iseq_constant_body {
     unsigned int is_size;
     unsigned int ci_size;
     unsigned int stack_max; /* for stack overflow check */
-    unsigned long * mark_offset_bits; /* Find references for GC */
+    iseq_bits_t * mark_offset_bits; /* Find references for GC */
 
     char catch_except_p; /* If a frame of this ISeq may catch exception, set TRUE */
     // If true, this ISeq is leaf *and* backtraces are not used, for example,
