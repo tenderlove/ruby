@@ -193,6 +193,7 @@ rb_iseq_free(const rb_iseq_t *iseq)
 	}
 	ruby_xfree((void *)body->catch_table);
 	ruby_xfree((void *)body->param.opt_table);
+	ruby_xfree((void *)body->mark_offset_bits);
 
 	if (body->param.keyword != NULL) {
 	    ruby_xfree((void *)body->param.keyword->default_values);
@@ -588,6 +589,7 @@ rb_iseq_memsize(const rb_iseq_t *iseq)
         size += body->iseq_size * sizeof(VALUE);
         size += body->insns_info.size * (sizeof(struct iseq_insn_info_entry) + sizeof(unsigned int));
         size += body->local_table_size * sizeof(ID);
+        size += ISEQ_MBITS_BUFLEN(body->iseq_size) * ISEQ_MBITS_SIZE;
         if (body->catch_table) {
             size += iseq_catch_table_bytes(body->catch_table->size);
         }
@@ -2637,14 +2639,28 @@ iseqw_each_child(VALUE self)
  *  call-seq:
  *     iseq.iseq_size
  *
- *  Get the size of the underlying iseq buffer
+ *  Get the size (in bytes) of the underlying iseq buffer
  */
 static VALUE
 iseqw_size(VALUE self)
 {
     const rb_iseq_t *iseq = iseqw_check(self);
     const struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
-    return LONG2NUM(body->iseq_size);
+    return LONG2NUM(body->iseq_size * sizeof(VALUE));
+}
+
+static VALUE
+iseqw_mark_offset_bits(VALUE self)
+{
+    const rb_iseq_t *iseq = iseqw_check(self);
+    const struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
+    int bit_fields = ISEQ_MBITS_BUFLEN(body->iseq_size);
+    VALUE bit_array = rb_ary_new_capa((long) bit_fields);
+    for (int i = 0; i < bit_fields; i++) {
+        rb_ary_push(bit_array, LONG2NUM(body->mark_offset_bits[i]));
+    }
+    rb_obj_freeze(bit_array);
+    return bit_array;
 }
 
 static void
@@ -3953,6 +3969,7 @@ Init_ISeq(void)
     rb_define_method(rb_cISeq, "trace_points", iseqw_trace_points, 0);
     rb_define_method(rb_cISeq, "each_child", iseqw_each_child, 0);
     rb_define_method(rb_cISeq, "iseq_size", iseqw_size, 0);
+    rb_define_method(rb_cISeq, "mark_offset_bits", iseqw_mark_offset_bits, 0);
 
 #if 0 /* TBD */
     rb_define_private_method(rb_cISeq, "marshal_dump", iseqw_marshal_dump, 0);

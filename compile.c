@@ -2245,6 +2245,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     struct iseq_insn_info_entry *insns_info;
     struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
     unsigned int *positions;
+    unsigned long *mark_offset_bits;
     LINK_ELEMENT *list;
     VALUE *generated_iseq;
     rb_event_flag_t events = 0;
@@ -2331,6 +2332,13 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     body->call_data = ZALLOC_N(struct rb_call_data, body->ci_size);
     ISEQ_COMPILE_DATA(iseq)->ci_index = 0;
 
+    // Calculate the bitmask buffer size.
+    // Round the generated_iseq size up to the nearest multiple
+    // of the number if bits in an unsigned long.
+
+    // Allocate enough room for the bitmask list
+    mark_offset_bits = ALLOC_N(unsigned long, ISEQ_MBITS_BUFLEN(code_index));
+
     list = FIRST_ELEMENT(anchor);
     insns_info_index = code_index = sp = 0;
 
@@ -2375,6 +2383,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			    rb_hash_rehash(map);
 			    freeze_hide_obj(map);
 			    generated_iseq[code_index + 1 + j] = map;
+                            ISEQ_MBITS_SET(mark_offset_bits, code_index + 1 + j);
 			    RB_OBJ_WRITTEN(iseq, Qundef, map);
                             FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
 			    break;
@@ -2391,13 +2400,14 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			    /* to mark ruby object */
 			    if (!SPECIAL_CONST_P(v)) {
 				RB_OBJ_WRITTEN(iseq, Qundef, v);
+                                ISEQ_MBITS_SET(mark_offset_bits, code_index + 1 + j);
                                 FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
 			    }
 			    break;
 			}
 		      case TS_IC: /* inline cache */
 		      case TS_ISE: /* inline storage entry */
-              case TS_ICVARC: /* inline cvar cache */
+                      case TS_ICVARC: /* inline cvar cache */
 		      case TS_IVC: /* inline ivar cache */
 			{
 			    unsigned int ic_index = FIX2UINT(operands[j]);
@@ -2491,6 +2501,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			xfree(generated_iseq);
 			xfree(insns_info);
 			xfree(positions);
+			xfree(mark_offset_bits);
 			debug_list(anchor, list);
 			COMPILE_ERROR(iseq, adjust->line_no,
 				      "iseq_set_sequence: adjust bug to %d %d < %d",
@@ -2510,6 +2521,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     body->iseq_encoded = (void *)generated_iseq;
     body->iseq_size = code_index;
     body->stack_max = stack_max;
+    body->mark_offset_bits = mark_offset_bits;
 
     /* get rid of memory leak when REALLOC failed */
     body->insns_info.body = insns_info;
@@ -11163,6 +11175,9 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
     struct rb_call_data *cd_entries = load_body->call_data;
     union iseq_inline_storage_entry *is_entries = load_body->is_entries;
 
+    unsigned long * mark_offset_bits = ALLOC_N(unsigned long, ISEQ_MBITS_BUFLEN(iseq_size));
+    load_body->mark_offset_bits = mark_offset_bits;
+
     for (code_index=0; code_index<iseq_size;) {
         /* opcode */
         const VALUE insn = code[code_index] = ibf_load_small_value(load, &reading_pos);
@@ -11183,6 +11198,7 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     code[code_index] = v;
                     if (!SPECIAL_CONST_P(v)) {
                         RB_OBJ_WRITTEN(iseqv, Qundef, v);
+                        ISEQ_MBITS_SET(mark_offset_bits, code_index);
                         FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
                     }
                     break;
@@ -11202,6 +11218,7 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     pinned_list_store(load->current_buffer->obj_list, (long)op, v);
 
                     code[code_index] = v;
+                    ISEQ_MBITS_SET(mark_offset_bits, code_index);
                     RB_OBJ_WRITTEN(iseqv, Qundef, v);
                     FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
                     break;
@@ -11213,6 +11230,7 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     code[code_index] = v;
                     if (!SPECIAL_CONST_P(v)) {
                         RB_OBJ_WRITTEN(iseqv, Qundef, v);
+                        ISEQ_MBITS_SET(mark_offset_bits, code_index);
                         FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
                     }
                     break;
