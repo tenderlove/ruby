@@ -19,6 +19,10 @@
 # include "ruby/ruby.h"
 #endif
 
+#if HAVE_OS_SIGNPOST_H
+#include <os/signpost.h>
+#endif
+
 #include <signal.h>
 
 #define sighandler_t ruby_sighandler_t
@@ -856,6 +860,10 @@ typedef struct rb_objspace {
 
     st_table *id_to_obj_tbl;
     st_table *obj_to_id_tbl;
+
+#if HAVE_OS_SIGNPOST_H
+    os_log_t log;
+#endif
 
 #if GC_DEBUG_STRESS_TO_CLASS
     VALUE stress_to_class;
@@ -3779,6 +3787,10 @@ void
 Init_heap(void)
 {
     rb_objspace_t *objspace = &rb_objspace;
+
+#if HAVE_OS_SIGNPOST_H
+    objspace->log = os_log_create("org.ruby-lang.GC", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+#endif
 
 #if defined(INIT_HEAP_PAGE_ALLOC_USE_MMAP)
     /* Need to determine if we can use mmap at runtime. */
@@ -9664,6 +9676,27 @@ gc_enter(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_
         break;
     }
 
+    switch (event) {
+      case gc_enter_event_start:
+          os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "START");
+          break;
+      case gc_enter_event_mark_continue:
+          os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "MARK");
+          break;
+      case gc_enter_event_sweep_continue:
+          os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "SWEEP");
+          break;
+      case gc_enter_event_rest:
+          os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "REST");
+          break;
+      case gc_enter_event_finalizer:
+          os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "FINALIZER");
+          break;
+      case gc_enter_event_rb_memerror:
+          os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "MEMERROR");
+          break;
+    }
+
     gc_enter_count(event);
     if (UNLIKELY(during_gc != 0)) rb_bug("during_gc != 0");
     if (RGENGC_CHECK_MODE >= 3) gc_verify_internal_consistency(objspace);
@@ -9679,6 +9712,27 @@ static inline void
 gc_exit(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_lev)
 {
     GC_ASSERT(during_gc != 0);
+
+    switch (event) {
+      case gc_enter_event_start:
+          os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "START");
+          break;
+      case gc_enter_event_mark_continue:
+          os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "MARK");
+          break;
+      case gc_enter_event_sweep_continue:
+          os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "SWEEP");
+          break;
+      case gc_enter_event_rest:
+          os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "REST");
+          break;
+      case gc_enter_event_finalizer:
+          os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "FINALIZER");
+          break;
+      case gc_enter_event_rb_memerror:
+          os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "MEMERROR");
+          break;
+    }
 
     gc_event_hook(objspace, RUBY_INTERNAL_EVENT_GC_EXIT, 0); /* TODO: which parameter should be passsed? */
     gc_record(objspace, 1, gc_enter_event_cstr(event));
@@ -13258,6 +13312,7 @@ static inline void
 gc_prof_mark_timer_start(rb_objspace_t *objspace)
 {
     RUBY_DTRACE_GC_HOOK(MARK_BEGIN);
+    os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "prof.mark");
 #if GC_PROFILE_MORE_DETAIL
     if (gc_prof_enabled(objspace)) {
         gc_prof_record(objspace)->gc_mark_time = getrusage_time();
@@ -13269,6 +13324,7 @@ static inline void
 gc_prof_mark_timer_stop(rb_objspace_t *objspace)
 {
     RUBY_DTRACE_GC_HOOK(MARK_END);
+    os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "prof.mark");
 #if GC_PROFILE_MORE_DETAIL
     if (gc_prof_enabled(objspace)) {
         gc_profile_record *record = gc_prof_record(objspace);
@@ -13281,6 +13337,7 @@ static inline void
 gc_prof_sweep_timer_start(rb_objspace_t *objspace)
 {
     RUBY_DTRACE_GC_HOOK(SWEEP_BEGIN);
+    os_signpost_interval_begin(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "prof.sweep");
     if (gc_prof_enabled(objspace)) {
         gc_profile_record *record = gc_prof_record(objspace);
 
@@ -13294,6 +13351,7 @@ static inline void
 gc_prof_sweep_timer_stop(rb_objspace_t *objspace)
 {
     RUBY_DTRACE_GC_HOOK(SWEEP_END);
+    os_signpost_interval_end(objspace->log, OS_SIGNPOST_ID_EXCLUSIVE, "prof.sweep");
 
     if (gc_prof_enabled(objspace)) {
         double sweep_time;

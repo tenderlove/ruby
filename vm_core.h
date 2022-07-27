@@ -51,6 +51,10 @@
 #include <signal.h>
 #include <stdarg.h>
 
+#if HAVE_OS_SIGNPOST_H
+#include <os/signpost.h>
+#endif
+
 #include "ruby_assert.h"
 
 #if VM_CHECK_MODE > 0
@@ -736,6 +740,10 @@ typedef struct rb_vm_struct {
 
 #if defined(USE_VM_CLOCK) && USE_VM_CLOCK
     uint32_t clock;
+#endif
+
+#if HAVE_OS_SIGNPOST_H
+    os_log_t log;
 #endif
 
     /* params */
@@ -1827,6 +1835,8 @@ RUBY_EXTERN rb_vm_t *ruby_current_vm_ptr;
 RUBY_EXTERN rb_event_flag_t ruby_vm_event_flags;
 RUBY_EXTERN rb_event_flag_t ruby_vm_event_enabled_global_flags;
 RUBY_EXTERN unsigned int    ruby_vm_event_local_num;
+
+RUBY_EXTERN os_log_t vm_log;
 
 MJIT_SYMBOL_EXPORT_END
 

@@ -405,6 +405,7 @@ VALUE rb_block_param_proxy;
 #define ruby_vm_redefined_flag GET_VM()->redefined_flag
 VALUE ruby_vm_const_missing_count = 0;
 rb_vm_t *ruby_current_vm_ptr = NULL;
+os_log_t vm_log = 0;
 rb_ractor_t *ruby_single_main_ractor;
 bool ruby_vm_keep_script_lines;
 
@@ -3533,6 +3534,22 @@ vm_keep_script_lines_set(VALUE self, VALUE flags)
     return flags;
 }
 
+#if HAVE_OS_SIGNPOST_H
+VALUE
+rb_vm_signpost_begin(VALUE mod)
+{
+    os_signpost_interval_begin(vm_log, OS_SIGNPOST_ID_EXCLUSIVE, "signpost");
+    return Qnil;
+}
+
+VALUE
+rb_vm_signpost_end(VALUE mod)
+{
+    os_signpost_interval_end(vm_log, OS_SIGNPOST_ID_EXCLUSIVE, "signpost");
+    return Qnil;
+}
+#endif
+
 void
 Init_VM(void)
 {
@@ -3561,6 +3578,11 @@ Init_VM(void)
 #if USE_DEBUG_COUNTER
     rb_define_singleton_method(rb_cRubyVM, "reset_debug_counters", rb_debug_counter_reset, 0);
     rb_define_singleton_method(rb_cRubyVM, "show_debug_counters", rb_debug_counter_show, 0);
+#endif
+
+#if HAVE_OS_SIGNPOST_H
+    rb_define_singleton_method(rb_cRubyVM, "signpost_begin", rb_vm_signpost_begin, 0);
+    rb_define_singleton_method(rb_cRubyVM, "signpost_end", rb_vm_signpost_end, 0);
 #endif
 
     /* FrozenCore (hidden) */
@@ -3897,6 +3919,10 @@ Init_BareVM(void)
         fputs("[FATAL] failed to allocate memory\n", stderr);
         exit(EXIT_FAILURE);
     }
+
+#if HAVE_OS_SIGNPOST_H
+    vm_log = os_log_create("org.ruby-lang.VM", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+#endif
 
     // setup the VM
     MEMZERO(th, rb_thread_t, 1);
