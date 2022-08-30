@@ -295,8 +295,8 @@ struct rb_callcache {
     } aux_;
 };
 
-#define VM_CALLCACHE_UNMARKABLE IMEMO_FL_USER0
-#define VM_CALLCACHE_ON_STACK   IMEMO_FL_USER1
+#define VM_CALLCACHE_UNMARKABLE FL_FREEZE
+#define VM_CALLCACHE_ON_STACK   FL_EXIVAR
 
 extern const struct rb_callcache *rb_vm_empty_cc(void);
 extern const struct rb_callcache *rb_vm_empty_cc_for_super(void);
