@@ -1,6 +1,6 @@
 #ifndef RUBY_SHAPE_H
 #define RUBY_SHAPE_H
-#ifdef VM_CHECK_MODE
+#if defined(VM_CHECK_MODE) && VM_CHECK_MODE > 0
 #define USE_WIDE_SHAPE 0
 #else
 #define USE_WIDE_SHAPE (!RUBY_DEBUG && ((SIZEOF_UINT64_T == SIZEOF_VALUE) && HAVE_MMAP))
@@ -36,9 +36,6 @@ struct rb_shape {
 };
 
 typedef struct rb_shape rb_shape_t;
-
-
-shape_id_t rb_generic_shape_id(VALUE obj);
 
 static inline shape_id_t
 IMEMO_CACHED_SHAPE_ID(VALUE cc)
@@ -89,8 +86,6 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 }
 #else
 typedef uint16_t attr_index_t;
-
-shape_id_t rb_generic_shape_id(VALUE obj);
 
 static inline shape_id_t
 ROBJECT_SHAPE_ID(VALUE obj)

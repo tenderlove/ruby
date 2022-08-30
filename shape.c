@@ -64,9 +64,9 @@ RCLASS_SHAPE_ID(VALUE obj)
 {
     return RCLASS_EXT(obj)->shape_id;
 }
-#endif
 
-MJIT_FUNC_EXPORTED shape_id_t rb_generic_shape_id(VALUE obj);
+shape_id_t rb_generic_shape_id(VALUE obj);
+#endif
 
 shape_id_t
 rb_shape_get_shape_id(VALUE obj)
