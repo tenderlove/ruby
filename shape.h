@@ -1,6 +1,10 @@
 #ifndef RUBY_SHAPE_H
 #define RUBY_SHAPE_H
-#define USE_WIDE_SHAPE (RUBY_DEBUG || ((SIZEOF_UINT64_T == SIZEOF_VALUE) && HAVE_MMAP && !VM_CHECK_MODE))
+#ifdef VM_CHECK_MODE
+#define USE_WIDE_SHAPE 0
+#else
+#define USE_WIDE_SHAPE (!RUBY_DEBUG && ((SIZEOF_UINT64_T == SIZEOF_VALUE) && HAVE_MMAP))
+#endif
 
 #if USE_WIDE_SHAPE
 typedef uint32_t shape_id_t;
