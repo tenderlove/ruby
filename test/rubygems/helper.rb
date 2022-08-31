@@ -334,8 +334,6 @@ class Gem::TestCase < Test::Unit::TestCase
     # capture output
     Gem::DefaultUserInteraction.ui = Gem::MockGemUi.new
 
-    ENV["TMPDIR"] = @tempdir
-
     @orig_SYSTEM_WIDE_CONFIG_FILE = Gem::ConfigFile::SYSTEM_WIDE_CONFIG_FILE
     Gem::ConfigFile.send :remove_const, :SYSTEM_WIDE_CONFIG_FILE
     Gem::ConfigFile.send :const_set, :SYSTEM_WIDE_CONFIG_FILE,
@@ -465,7 +463,14 @@ class Gem::TestCase < Test::Unit::TestCase
 
     Dir.chdir @current_dir
 
+    # Prevent a race condition on removing TMPDIR being written by MJIT
+    if defined?(RubyVM::MJIT.enabled?) && RubyVM::MJIT.enabled?
+      RubyVM::MJIT.pause(wait: false)
+    end
     FileUtils.rm_rf @tempdir
+    if defined?(RubyVM::MJIT.enabled?) && RubyVM::MJIT.enabled?
+      RubyVM::MJIT.resume
+    end
 
     ENV.replace(@orig_env)
 
