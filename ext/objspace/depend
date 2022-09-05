@@ -350,6 +350,7 @@ objspace.o: $(top_srcdir)/internal/serial.h
 objspace.o: $(top_srcdir)/internal/static_assert.h
 objspace.o: $(top_srcdir)/internal/warnings.h
 objspace.o: $(top_srcdir)/node.h
+objspace.o: $(top_srcdir)/shape.h
 objspace.o: $(top_srcdir)/symbol.h
 objspace.o: objspace.c
 objspace.o: {$(VPATH)}id.h

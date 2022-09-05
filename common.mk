@@ -1974,6 +1974,7 @@ array.$(OBJEXT): {$(VPATH)}oniguruma.h
 array.$(OBJEXT): {$(VPATH)}probes.dmyh
 array.$(OBJEXT): {$(VPATH)}probes.h
 array.$(OBJEXT): {$(VPATH)}ruby_assert.h
+array.$(OBJEXT): {$(VPATH)}shape.h
 array.$(OBJEXT): {$(VPATH)}st.h
 array.$(OBJEXT): {$(VPATH)}subst.h
 array.$(OBJEXT): {$(VPATH)}transient_heap.h
@@ -2358,6 +2359,7 @@ bignum.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 bignum.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 bignum.$(OBJEXT): {$(VPATH)}missing.h
 bignum.$(OBJEXT): {$(VPATH)}ruby_assert.h
+bignum.$(OBJEXT): {$(VPATH)}shape.h
 bignum.$(OBJEXT): {$(VPATH)}st.h
 bignum.$(OBJEXT): {$(VPATH)}subst.h
 bignum.$(OBJEXT): {$(VPATH)}thread.h
@@ -3338,6 +3340,7 @@ complex.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 complex.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 complex.$(OBJEXT): {$(VPATH)}missing.h
 complex.$(OBJEXT): {$(VPATH)}ruby_assert.h
+complex.$(OBJEXT): {$(VPATH)}shape.h
 complex.$(OBJEXT): {$(VPATH)}st.h
 complex.$(OBJEXT): {$(VPATH)}subst.h
 cont.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
@@ -4099,6 +4102,7 @@ dir.$(OBJEXT): {$(VPATH)}io.h
 dir.$(OBJEXT): {$(VPATH)}missing.h
 dir.$(OBJEXT): {$(VPATH)}onigmo.h
 dir.$(OBJEXT): {$(VPATH)}oniguruma.h
+dir.$(OBJEXT): {$(VPATH)}shape.h
 dir.$(OBJEXT): {$(VPATH)}st.h
 dir.$(OBJEXT): {$(VPATH)}subst.h
 dir.$(OBJEXT): {$(VPATH)}thread.h
@@ -5600,6 +5604,7 @@ encoding.$(OBJEXT): {$(VPATH)}onigmo.h
 encoding.$(OBJEXT): {$(VPATH)}oniguruma.h
 encoding.$(OBJEXT): {$(VPATH)}regenc.h
 encoding.$(OBJEXT): {$(VPATH)}ruby_assert.h
+encoding.$(OBJEXT): {$(VPATH)}shape.h
 encoding.$(OBJEXT): {$(VPATH)}st.h
 encoding.$(OBJEXT): {$(VPATH)}subst.h
 encoding.$(OBJEXT): {$(VPATH)}util.h
@@ -5799,6 +5804,7 @@ enum.$(OBJEXT): {$(VPATH)}missing.h
 enum.$(OBJEXT): {$(VPATH)}onigmo.h
 enum.$(OBJEXT): {$(VPATH)}oniguruma.h
 enum.$(OBJEXT): {$(VPATH)}ruby_assert.h
+enum.$(OBJEXT): {$(VPATH)}shape.h
 enum.$(OBJEXT): {$(VPATH)}st.h
 enum.$(OBJEXT): {$(VPATH)}subst.h
 enum.$(OBJEXT): {$(VPATH)}symbol.h
@@ -6638,6 +6644,7 @@ file.$(OBJEXT): {$(VPATH)}io.h
 file.$(OBJEXT): {$(VPATH)}missing.h
 file.$(OBJEXT): {$(VPATH)}onigmo.h
 file.$(OBJEXT): {$(VPATH)}oniguruma.h
+file.$(OBJEXT): {$(VPATH)}shape.h
 file.$(OBJEXT): {$(VPATH)}st.h
 file.$(OBJEXT): {$(VPATH)}subst.h
 file.$(OBJEXT): {$(VPATH)}thread.h
@@ -7273,6 +7280,7 @@ hash.$(OBJEXT): {$(VPATH)}probes.dmyh
 hash.$(OBJEXT): {$(VPATH)}probes.h
 hash.$(OBJEXT): {$(VPATH)}ractor.h
 hash.$(OBJEXT): {$(VPATH)}ruby_assert.h
+hash.$(OBJEXT): {$(VPATH)}shape.h
 hash.$(OBJEXT): {$(VPATH)}st.h
 hash.$(OBJEXT): {$(VPATH)}subst.h
 hash.$(OBJEXT): {$(VPATH)}symbol.h
@@ -7657,6 +7665,7 @@ io.$(OBJEXT): {$(VPATH)}oniguruma.h
 io.$(OBJEXT): {$(VPATH)}ractor.h
 io.$(OBJEXT): {$(VPATH)}ruby_assert.h
 io.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+io.$(OBJEXT): {$(VPATH)}shape.h
 io.$(OBJEXT): {$(VPATH)}st.h
 io.$(OBJEXT): {$(VPATH)}subst.h
 io.$(OBJEXT): {$(VPATH)}thread.h
@@ -9140,6 +9149,7 @@ math.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 math.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 math.$(OBJEXT): {$(VPATH)}math.c
 math.$(OBJEXT): {$(VPATH)}missing.h
+math.$(OBJEXT): {$(VPATH)}shape.h
 math.$(OBJEXT): {$(VPATH)}st.h
 math.$(OBJEXT): {$(VPATH)}subst.h
 memory_view.$(OBJEXT): $(hdrdir)/ruby/ruby.h
@@ -10342,6 +10352,7 @@ numeric.$(OBJEXT): {$(VPATH)}numeric.rbinc
 numeric.$(OBJEXT): {$(VPATH)}onigmo.h
 numeric.$(OBJEXT): {$(VPATH)}oniguruma.h
 numeric.$(OBJEXT): {$(VPATH)}ruby_assert.h
+numeric.$(OBJEXT): {$(VPATH)}shape.h
 numeric.$(OBJEXT): {$(VPATH)}st.h
 numeric.$(OBJEXT): {$(VPATH)}subst.h
 numeric.$(OBJEXT): {$(VPATH)}util.h
@@ -12142,6 +12153,7 @@ rational.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 rational.$(OBJEXT): {$(VPATH)}missing.h
 rational.$(OBJEXT): {$(VPATH)}rational.c
 rational.$(OBJEXT): {$(VPATH)}ruby_assert.h
+rational.$(OBJEXT): {$(VPATH)}shape.h
 rational.$(OBJEXT): {$(VPATH)}st.h
 rational.$(OBJEXT): {$(VPATH)}subst.h
 re.$(OBJEXT): $(hdrdir)/ruby.h
@@ -12339,6 +12351,7 @@ re.$(OBJEXT): {$(VPATH)}re.h
 re.$(OBJEXT): {$(VPATH)}regenc.h
 re.$(OBJEXT): {$(VPATH)}regex.h
 re.$(OBJEXT): {$(VPATH)}regint.h
+re.$(OBJEXT): {$(VPATH)}shape.h
 re.$(OBJEXT): {$(VPATH)}st.h
 re.$(OBJEXT): {$(VPATH)}subst.h
 re.$(OBJEXT): {$(VPATH)}util.h
@@ -14507,6 +14520,7 @@ sprintf.$(OBJEXT): {$(VPATH)}onigmo.h
 sprintf.$(OBJEXT): {$(VPATH)}oniguruma.h
 sprintf.$(OBJEXT): {$(VPATH)}re.h
 sprintf.$(OBJEXT): {$(VPATH)}regex.h
+sprintf.$(OBJEXT): {$(VPATH)}shape.h
 sprintf.$(OBJEXT): {$(VPATH)}sprintf.c
 sprintf.$(OBJEXT): {$(VPATH)}st.h
 sprintf.$(OBJEXT): {$(VPATH)}subst.h
@@ -15058,6 +15072,7 @@ string.$(OBJEXT): {$(VPATH)}probes.h
 string.$(OBJEXT): {$(VPATH)}re.h
 string.$(OBJEXT): {$(VPATH)}regex.h
 string.$(OBJEXT): {$(VPATH)}ruby_assert.h
+string.$(OBJEXT): {$(VPATH)}shape.h
 string.$(OBJEXT): {$(VPATH)}st.h
 string.$(OBJEXT): {$(VPATH)}string.c
 string.$(OBJEXT): {$(VPATH)}subst.h
@@ -15493,6 +15508,7 @@ symbol.$(OBJEXT): {$(VPATH)}oniguruma.h
 symbol.$(OBJEXT): {$(VPATH)}probes.dmyh
 symbol.$(OBJEXT): {$(VPATH)}probes.h
 symbol.$(OBJEXT): {$(VPATH)}ruby_assert.h
+symbol.$(OBJEXT): {$(VPATH)}shape.h
 symbol.$(OBJEXT): {$(VPATH)}st.h
 symbol.$(OBJEXT): {$(VPATH)}subst.h
 symbol.$(OBJEXT): {$(VPATH)}symbol.c
@@ -16106,6 +16122,7 @@ transcode.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 transcode.$(OBJEXT): {$(VPATH)}missing.h
 transcode.$(OBJEXT): {$(VPATH)}onigmo.h
 transcode.$(OBJEXT): {$(VPATH)}oniguruma.h
+transcode.$(OBJEXT): {$(VPATH)}shape.h
 transcode.$(OBJEXT): {$(VPATH)}st.h
 transcode.$(OBJEXT): {$(VPATH)}subst.h
 transcode.$(OBJEXT): {$(VPATH)}transcode.c
