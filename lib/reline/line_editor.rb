@@ -655,7 +655,10 @@ class Reline::LineEditor
   end
 
   private def padding_space_with_escape_sequences(str, width)
-    str + (' ' * (width - calculate_width(str, true)))
+    padding_width = width - calculate_width(str, true)
+    # padding_width should be only positive value. But macOS and Alacritty returns negative value.
+    padding_width = 0 if padding_width < 0
+    str + (' ' * padding_width)
   end
 
   private def render_each_dialog(dialog, cursor_column)
@@ -758,7 +761,6 @@ class Reline::LineEditor
           @output.write @full_block
         elsif dialog.scrollbar_pos <= (i * 2) and (i * 2) < (dialog.scrollbar_pos + bar_height)
           @output.write @upper_half_block
-          str += ''
         elsif dialog.scrollbar_pos <= (i * 2 + 1) and (i * 2) < (dialog.scrollbar_pos + bar_height)
           @output.write @lower_half_block
         else

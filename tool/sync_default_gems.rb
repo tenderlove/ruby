@@ -302,6 +302,7 @@ def sync_default_gems(gem)
     cp_r(Dir.glob("#{upstream}/lib/did_you_mean*"), "lib")
     cp_r("#{upstream}/did_you_mean.gemspec", "lib/did_you_mean")
     cp_r("#{upstream}/test", "test/did_you_mean")
+    rm_rf("test/did_you_mean/lib")
     rm_rf(%w[test/did_you_mean/tree_spell/test_explore.rb])
   when "erb"
     rm_rf(%w[lib/erb* test/erb libexec/erb])
@@ -547,6 +548,12 @@ end
 def update_default_gems(gem, release: false)
 
   author, repository = REPOSITORIES[gem.to_sym].split('/')
+  default_branch = case gem
+                  when 'syntax_suggest'
+                    "main"
+                  else
+                    "master"
+                  end
 
   puts "Update #{author}/#{repository}"
 
@@ -572,8 +579,8 @@ def update_default_gems(gem, release: false)
       last_release = `git tag`.chomp.split.delete_if{|v| v =~ /pre|beta/ }.last
       `git checkout #{last_release}`
     else
-      `git checkout master`
-      `git rebase origin/master`
+      `git checkout #{default_branch}`
+      `git rebase origin/#{default_branch}`
     end
   end
 end

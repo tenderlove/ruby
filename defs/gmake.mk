@@ -137,7 +137,7 @@ config.status: $(wildcard config.cache)
 STUBPROGRAM = rubystub$(EXEEXT)
 IGNOREDPATTERNS = %~ .% %.orig %.rej \#%\#
 SCRIPTBINDIR := $(if $(EXEEXT),,exec/)
-SCRIPTPROGRAMS = $(addprefix $(SCRIPTBINDIR),$(addsuffix $(EXEEXT),$(filter-out $(IGNOREDPATTERNS),$(notdir $(wildcard $(srcdir)/libexec/*)))))
+SCRIPTPROGRAMS = $(addprefix $(SCRIPTBINDIR),$(addsuffix $(EXEEXT),$(filter-out $(IGNOREDPATTERNS),$(notdir $(wildcard $(srcdir)/bin/*)))))
 
 stub: $(STUBPROGRAM)
 scriptbin: $(SCRIPTPROGRAMS)
@@ -163,9 +163,8 @@ $(SCRIPTBINDIR)%$(EXEEXT): bin/% $(STUBPROGRAM) \
 	$(Q) chmod +x $@
 	$(Q) $(POSTLINK)
 
-$(TIMESTAMPDIR)/.exec.time:
-	$(Q) mkdir exec
-	$(Q) exit > $@
+$(SCRIPTBINDIR):
+	$(Q) mkdir $@
 
 .PHONY: commit
 commit: $(if $(filter commit,$(MAKECMDGOALS)),$(filter-out commit,$(MAKECMDGOALS))) up

@@ -100,6 +100,10 @@
 #include "vm_debug.h"
 #include "vm_sync.h"
 
+#if USE_MJIT && defined(HAVE_SYS_WAIT_H)
+#include <sys/wait.h>
+#endif
+
 #ifndef USE_NATIVE_THREAD_PRIORITY
 #define USE_NATIVE_THREAD_PRIORITY 0
 #define RUBY_THREAD_PRIORITY_MAX 3
@@ -2323,7 +2327,7 @@ rb_threadptr_execute_interrupts(rb_thread_t *th, int blocking_timing)
             // outside ruby_sigchld_handler to avoid recursively relying on the SIGCHLD handler.
             if (mjit_waitpid_finished) {
                 mjit_waitpid_finished = false;
-                mjit_notify_waitpid(mjit_waitpid_status);
+                mjit_notify_waitpid(WIFEXITED(mjit_waitpid_status) ? WEXITSTATUS(mjit_waitpid_status) : -1);
             }
 #endif
         }

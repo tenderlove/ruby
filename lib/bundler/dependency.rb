@@ -7,7 +7,7 @@ require_relative "rubygems_ext"
 module Bundler
   class Dependency < Gem::Dependency
     attr_reader :autorequire
-    attr_reader :groups, :platforms, :gemfile, :git, :github, :branch, :ref, :force_ruby_platform
+    attr_reader :groups, :platforms, :gemfile, :path, :git, :github, :branch, :ref, :force_ruby_platform
 
     # rubocop:disable Naming/VariableNumber
     PLATFORM_MAP = {
@@ -42,6 +42,7 @@ module Bundler
       :jruby    => Gem::Platform::JAVA,
       :jruby_18 => Gem::Platform::JAVA,
       :jruby_19 => Gem::Platform::JAVA,
+      :windows  => Gem::Platform::WINDOWS,
       :mswin    => Gem::Platform::MSWIN,
       :mswin_18 => Gem::Platform::MSWIN,
       :mswin_19 => Gem::Platform::MSWIN,
@@ -101,6 +102,7 @@ module Bundler
       @autorequire    = nil
       @groups         = Array(options["group"] || :default).map(&:to_sym)
       @source         = options["source"]
+      @path           = options["path"]
       @git            = options["git"]
       @github         = options["github"]
       @branch         = options["branch"]
@@ -151,7 +153,7 @@ module Bundler
     def to_lock
       out = super
       out << "!" if source
-      out << "\n"
+      out
     end
 
     def specific?
