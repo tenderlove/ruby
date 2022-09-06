@@ -27,10 +27,9 @@ yjit-static-lib-no:
 
 yjit-static-lib-cargo:
 	$(ECHO) 'building Rust YJIT ($(YJIT_SUPPORT) mode)'
-	$(Q)$(CHDIR) $(top_srcdir)/yjit && \
-	        CARGO_TARGET_DIR='$(CARGO_TARGET_DIR)' \
+	$(Q) CARGO_TARGET_DIR='$(CARGO_TARGET_DIR)' \
 	        CARGO_TERM_PROGRESS_WHEN='never' \
-	        $(CARGO) $(CARGO_VERBOSE) build $(CARGO_BUILD_ARGS)
+	        $(CARGO) $(CARGO_VERBOSE) build --manifest-path=$(top_srcdir)/yjit/Cargo.toml $(CARGO_BUILD_ARGS)
 
 yjit-static-lib-dev: yjit-static-lib-cargo
 yjit-static-lib-dev_nodebug: yjit-static-lib-cargo

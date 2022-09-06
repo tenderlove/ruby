@@ -1,23 +1,36 @@
 #ifndef RUBY_SHAPE_H
 #define RUBY_SHAPE_H
-#if defined(VM_CHECK_MODE) && VM_CHECK_MODE > 0
-#define USE_WIDE_SHAPE 0
+#if (SIZEOF_UINT64_T == SIZEOF_VALUE)
+#define SIZEOF_SHAPE_T 4
+#define SHAPE_IN_BASIC_FLAGS 1
 #else
-#define USE_WIDE_SHAPE (!RUBY_DEBUG && ((SIZEOF_UINT64_T == SIZEOF_VALUE) && HAVE_MMAP))
+#define SIZEOF_SHAPE_T 2
+#define SHAPE_IN_BASIC_FLAGS 0
 #endif
 
-#if USE_WIDE_SHAPE
+#if RUBY_DEBUG || (defined(VM_CHECK_MODE) && VM_CHECK_MODE > 0)
+#  if SIZEOF_SHAPE_T == 4
 typedef uint32_t shape_id_t;
-# define SHAPE_BITS 32
-#else
+# define SHAPE_BITS 16
+#  else
 typedef uint16_t shape_id_t;
 # define SHAPE_BITS 16
+#  endif
+#else
+#  if SIZEOF_SHAPE_T == 4
+typedef uint32_t shape_id_t;
+# define SHAPE_BITS 32
+#  else
+typedef uint16_t shape_id_t;
+# define SHAPE_BITS 16
+#  endif
 #endif
 
 # define SHAPE_MASK (((VALUE)1 << SHAPE_BITS) - 1)
+# define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_BITS)
 
 # define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_BITS)
-# define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_BITS)
+
 # define SHAPE_BITMAP_SIZE 16384
 
 # define MAX_SHAPE_ID (SHAPE_MASK - 1)
@@ -25,7 +38,7 @@ typedef uint16_t shape_id_t;
 # define ROOT_SHAPE_ID 0x0
 # define FROZEN_ROOT_SHAPE_ID 0x1
 
-#define SHAPE_ID(shape) ((((rb_shape_t *)shape)->flags >> SHAPE_BITS) & SHAPE_MASK)
+#define SHAPE_ID(shape) ((((rb_shape_t *)shape)->flags >> SHAPE_FLAG_SHIFT) & SHAPE_MASK)
 
 struct rb_shape {
     VALUE flags; // Shape ID and frozen status encoded within flags
@@ -52,7 +65,7 @@ IMEMO_SET_CACHED_SHAPE_ID(VALUE cc, shape_id_t shape_id)
     RBASIC(cc)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
 }
 
-#if USE_WIDE_SHAPE
+#if SHAPE_IN_BASIC_FLAGS
 typedef uint32_t attr_index_t;
 
 static inline shape_id_t

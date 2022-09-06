@@ -1935,10 +1935,14 @@ fn gen_set_ivar(
     let recv_opnd = ctx.stack_pop(1);
 
     // Call rb_vm_set_ivar_id with the receiver, the ivar name, and the value
-    mov(cb, C_ARG_REGS[0], recv_opnd);
-    mov(cb, C_ARG_REGS[1], uimm_opnd(ivar_name.into()));
-    mov(cb, C_ARG_REGS[2], val_opnd);
-    call_ptr(cb, REG0, rb_vm_set_ivar_id as *const u8);
+    let val = asm.ccall(
+        rb_vm_set_ivar_id as *const u8,
+        vec![
+            recv_opnd,
+            Opnd::UImm(ivar_name.into()),
+            val_opnd,
+        ],
+    );
 
     let out_opnd = ctx.stack_push(Type::Unknown);
     asm.mov(out_opnd, val);
@@ -2020,11 +2024,11 @@ fn gen_get_ivar(
         unsafe { rb_obj_ensure_iv_index_mapping(comptime_receiver, ivar_name) }.as_usize();
 
     // must be before stack_pop
-    let reg0_type = ctx.get_opnd_type(reg0_opnd);
+    let recv_type = ctx.get_opnd_type(recv_opnd);
 
     // Upgrade type
-    if !reg0_type.is_heap() {
-        ctx.upgrade_opnd_type(reg0_opnd, Type::UnknownHeap);
+    if !recv_type.is_heap() {
+        ctx.upgrade_opnd_type(recv_opnd, Type::UnknownHeap);
     }
 
     // Pop receiver if it's on the temp stack
@@ -2033,29 +2037,36 @@ fn gen_get_ivar(
     }
 
     // Guard heap object
-    if !reg0_type.is_heap() {
-        guard_object_is_heap(cb, REG0, ctx, side_exit);
+    if !recv_type.is_heap() {
+        guard_object_is_heap(asm, recv, side_exit);
+    }
+
+    if USE_RVARGC != 0 {
+        // Check that the ivar table is big enough
+        // Check that the slot is inside the ivar table (num_slots > index)
+        let num_slots = Opnd::mem(32, recv, ROBJECT_OFFSET_NUMIV);
+        asm.cmp(num_slots, Opnd::UImm(ivar_index as u64));
+        asm.jbe(counted_exit!(ocb, side_exit, getivar_idx_out_of_range).into());
     }
 
     // Compile time self is embedded and the ivar index lands within the object
     let embed_test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED.as_usize())) != VALUE(0) };
 
+    // 0xFFFFFFFF_00000000
     let expected_flags_mask: usize = (RUBY_T_MASK as usize) | 0xFFFFFFFF_00000000 | (ROBJECT_EMBED as usize);
     let expected_flags = comptime_receiver.builtin_flags() & expected_flags_mask;
 
     // Combined guard for all flags: shape, embeddedness, and T_OBJECT
-    let reg2 = C_ARG_REGS[0]; // we need an extra reg for storage without clobbering REG0
-    let flags_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS);
-    add_comment(cb, "guard shape, embedded, and T_OBJECT");
-    mov(cb, REG1, uimm_opnd(expected_flags_mask as u64));
-    and(cb, REG1, flags_opnd);
-    mov(cb, reg2, uimm_opnd(expected_flags as u64));
-    cmp(cb, REG1, reg2);
+    let flags_opnd = Opnd::mem(64, recv, RUBY_OFFSET_RBASIC_FLAGS);
+
+    asm.comment("guard shape, embedded, and T_OBJECT");
+    let flags_opnd = asm.and(flags_opnd, Opnd::UImm(expected_flags_mask as u64));
+    asm.cmp(flags_opnd, Opnd::UImm(expected_flags as u64));
     jit_chain_guard(
         JCC_JNE,
         jit,
         &starting_context,
-        cb,
+        asm,
         ocb,
         max_chain_depth,
         side_exit,
@@ -2126,6 +2137,7 @@ fn gen_getinstancevariable(
     let side_exit = get_side_exit(jit, ocb, ctx);
 
     // Guard that the receiver has the same class as the one from compile time.
+    let self_asm_opnd = Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF);
 
     gen_get_ivar(
         jit,
@@ -4861,7 +4873,6 @@ fn gen_send_general(
 
                 let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
 
-                mov(cb, REG0, recv);
                 return gen_get_ivar(
                     jit,
                     ctx,

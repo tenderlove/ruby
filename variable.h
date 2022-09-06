@@ -11,7 +11,7 @@
 /* per-object */
 
 struct gen_ivtbl {
-#if !USE_WIDE_SHAPE
+#if !SHAPE_IN_BASIC_FLAGS
     uint16_t shape_id;
 #endif
     uint32_t numiv;
@@ -22,7 +22,7 @@ int rb_ivar_generic_ivtbl_lookup(VALUE obj, struct gen_ivtbl **);
 VALUE rb_ivar_generic_lookup_with_index(VALUE obj, ID id, uint32_t index);
 
 #include "shape.h"
-#if !USE_WIDE_SHAPE
+#if !SHAPE_IN_BASIC_FLAGS
 shape_id_t rb_generic_shape_id(VALUE obj);
 #endif
 

@@ -1116,14 +1116,14 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         goto general_path;
     }
 
-#if USE_WIDE_SHAPE
+#if SHAPE_IN_BASIC_FLAGS
     shape_id = RBASIC_SHAPE_ID(obj);
 #endif
 
     switch (BUILTIN_TYPE(obj)) {
         case T_OBJECT:
             ivar_list = ROBJECT_IVPTR(obj);
-#if !USE_WIDE_SHAPE
+#if !SHAPE_IN_BASIC_FLAGS
             shape_id = ROBJECT_SHAPE_ID(obj);
 #endif
             break;
@@ -1136,7 +1136,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             if (FL_TEST_RAW(obj, FL_EXIVAR)) {
                 struct gen_ivtbl *ivtbl;
                 rb_ivar_generic_ivtbl_lookup(obj, &ivtbl);
-#if !USE_WIDE_SHAPE
+#if !SHAPE_IN_BASIC_FLAGS
                 shape_id = ivtbl->shape_id;
 #endif
                 ivar_list = ivtbl->ivptr;
@@ -1377,7 +1377,7 @@ NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t
 static VALUE
 vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index)
 {
-#if USE_WIDE_SHAPE
+#if SHAPE_IN_BASIC_FLAGS
     shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
 #else
     shape_id_t shape_id = rb_generic_shape_id(obj);
@@ -1390,7 +1390,7 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shap
         struct gen_ivtbl *ivtbl = 0;
         if (dest_shape_id != shape_id) {
             ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
-#if USE_WIDE_SHAPE
+#if SHAPE_IN_BASIC_FLAGS
             RBASIC_SET_SHAPE_ID(obj, dest_shape_id);
 #else
             ivtbl->shape_id = dest_shape_id;

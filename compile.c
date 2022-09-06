@@ -2443,12 +2443,6 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                             break;
                         }
                       /* [ TS_IVC | TS_ICVARC | TS_ISE | TS_IC ] */
-		      case TS_IVC: /* inline ivar cache */
-                        {
-                            unsigned int ic_index = FIX2UINT(operands[j]);
-                            vm_ic_attr_index_initialize(((IVC)&body->is_entries[ic_index]), INVALID_SHAPE_ID);
-                        }
-                        break;
                       case TS_IC: /* inline cache: constants */
                         {
                             unsigned int ic_index = ISEQ_COMPILE_DATA(iseq)->ic_index++;
@@ -2465,6 +2459,11 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                             generated_iseq[code_index + 1 + j] = (VALUE)ic;
                         }
                         break;
+		      case TS_IVC: /* inline ivar cache */
+                        {
+                            unsigned int ic_index = FIX2UINT(operands[j]);
+                            vm_ic_attr_index_initialize(((IVC)&body->is_entries[ic_index]), INVALID_SHAPE_ID);
+                        }
                       case TS_ISE: /* inline storage entry: `once` insn */
                       case TS_ICVARC: /* inline cvar cache */
                         {

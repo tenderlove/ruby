@@ -369,7 +369,7 @@ impl VALUE {
         unsafe { CLASS_OF(self) }
     }
 
-    pub fn shape_of(self) -> u16 {
+    pub fn shape_of(self) -> u32 {
         unsafe { rb_shape_get_shape_id(self) }
     }
 

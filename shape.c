@@ -55,10 +55,10 @@ rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id)
 static inline shape_id_t
 shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
     VALUE flags = shape->flags & ~((uint64_t)SHAPE_MASK << 16);
-    return (shape_id_t)(shape->flags = (flags | ((VALUE)id << SHAPE_BITS)));
+    return (shape_id_t)(shape->flags = (flags | ((VALUE)id << SHAPE_FLAG_SHIFT)));
 }
 
-#if !USE_WIDE_SHAPE
+#if !SHAPE_IN_BASIC_FLAGS
 static inline shape_id_t
 RCLASS_SHAPE_ID(VALUE obj)
 {
@@ -75,7 +75,7 @@ rb_shape_get_shape_id(VALUE obj)
         return SHAPE_ID(rb_shape_get_frozen_root_shape());
     }
 
-#if USE_WIDE_SHAPE
+#if SHAPE_IN_BASIC_FLAGS
     return RBASIC_SHAPE_ID(obj);
 #else
     switch (BUILTIN_TYPE(obj)) {
