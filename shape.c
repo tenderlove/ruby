@@ -272,21 +272,14 @@ rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
 
 int
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE *value) {
-    size_t depth = 0;
-    int counting = FALSE;
     while (shape->parent) {
-        if (counting) {
-            depth++;
-        }
-        else {
-            counting = (shape->edge_name == id);
+        if (shape->edge_name == id) {
+            *value = shape->iv_count - 1;
+            return true;
         }
         shape = shape->parent;
     }
-    if (counting) {
-        *value = depth;
-    }
-    return counting;
+    return false;
 }
 
 static rb_shape_t *
