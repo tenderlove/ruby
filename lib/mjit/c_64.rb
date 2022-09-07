@@ -99,8 +99,10 @@ module RubyVM::MJIT
 
   def C.iseq_inline_iv_cache_entry
     @iseq_inline_iv_cache_entry ||= CType::Struct.new(
-      "iseq_inline_iv_cache_entry", 8,
-      entry: [0, CType::Pointer.new { self.rb_iv_index_tbl_entry }],
+      "iseq_inline_iv_cache_entry", 12,
+      source_shape_id: [0, self.shape_id_t],
+      dest_shape_id: [32, self.shape_id_t],
+      attr_index: [64, CType::Immediate.new(-4)],
     )
   end
 
@@ -173,7 +175,11 @@ module RubyVM::MJIT
       call_: [192, self.vm_call_handler],
       aux_: [256, CType::Union.new(
         "", 8,
-        attr_index: CType::Immediate.new(-4),
+        attr: CType::Struct.new(
+          "", 8,
+          index: [0, self.attr_index_t],
+          dest_shape_id: [32, self.shape_id_t],
+        ),
         method_missing_reason: self.method_missing_reason,
         v: self.VALUE,
       )],
@@ -313,10 +319,10 @@ module RubyVM::MJIT
 
   def C.rb_iv_index_tbl_entry
     @rb_iv_index_tbl_entry ||= CType::Struct.new(
-      "rb_iv_index_tbl_entry", 24,
-      index: [0, CType::Immediate.new(-4)],
-      class_serial: [64, self.rb_serial_t],
-      class_value: [128, self.VALUE],
+      "rb_iv_index_tbl_entry", 12,
+      idx: [0, CType::Immediate.new(-4)],
+      source_shape_id: [32, self.shape_id_t],
+      dest_shape_id: [64, self.shape_id_t],
     )
   end
 
@@ -389,9 +395,13 @@ module RubyVM::MJIT
 
   def C.ID = CType::Stub.new(:ID)
 
+  def C.shape_id_t = CType::Stub.new(:shape_id_t)
+
   def C.rb_thread_struct = CType::Stub.new(:rb_thread_struct)
 
   def C.vm_call_handler = CType::Stub.new(:vm_call_handler)
+
+  def C.attr_index_t = CType::Stub.new(:attr_index_t)
 
   def C.method_missing_reason = CType::Stub.new(:method_missing_reason)
 
