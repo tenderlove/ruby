@@ -199,8 +199,12 @@ class BindingGenerator
         end
         tokens.drop(1).map do |token|
           case token
-          when /\A(0x)?\d+\z/, '(', '-', '<<',  ')'
+          when /\A((?:0x)?\d+)(?:ULL?)?\z/
+            $1
+          when '(', '-', '<<',  ')'
             token
+          when *@macros
+            "self.#{token}"
           when *@enums.values.flatten
             "self.#{token}"
           else
@@ -332,6 +336,9 @@ nodes = HeaderParser.new(File.join(src_dir, 'mjit_compiler.h'), cflags: cflags).
 generator = BindingGenerator.new(
   macros: %w[
     NOT_COMPILED_STACK_SIZE
+    SHAPE_BITS
+    SHAPE_MASK
+    INVALID_SHAPE_ID
     USE_LAZY_LOAD
     USE_RVARGC
     VM_CALL_KW_SPLAT
@@ -378,6 +385,8 @@ generator = BindingGenerator.new(
     rb_mjit_compile_info
     rb_mjit_unit
     rb_serial_t
+    shape_id_t
+    attr_index_t
   ],
   ruby_fields: {
     rb_iseq_location_struct: %w[

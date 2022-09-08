@@ -26,7 +26,7 @@ typedef uint16_t shape_id_t;
 #  endif
 #endif
 
-# define SHAPE_MASK (((VALUE)1 << SHAPE_BITS) - 1)
+# define SHAPE_MASK ((1UL << SHAPE_BITS) - 1)
 # define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_BITS)
 
 # define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_BITS)
