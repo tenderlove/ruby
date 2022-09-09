@@ -76,6 +76,7 @@ AS_IF([test "$HAVE_BASERUBY" != no -a "`RUBYOPT=- $BASERUBY --disable=gems -e 'p
     HAVE_BASERUBY=no
 ])
 AS_IF([test "$HAVE_BASERUBY" = no], [
+    AS_IF([test "$cross_compiling" = yes], [AC_MSG_ERROR([executable host ruby is required for cross-compiling])])
     BASERUBY="echo executable host ruby is required.  use --with-baseruby option.; false"
 ])
 AC_SUBST(BASERUBY)
@@ -3347,8 +3348,6 @@ for var in bindir includedir libdir rubylibprefix; do
 done
 
 BTESTRUBY='$(MINIRUBY)'
-BOOTSTRAPRUBY='$(BASERUBY)'
-BOOTSTRAPRUBY_COMMAND='$(BOOTSTRAPRUBY)'
 AS_IF([test x"$cross_compiling" = xyes], [
   test x"$MINIRUBY" = x && MINIRUBY="${RUBY-$BASERUBY} -I`$CHDIR .; pwd` "-r'$(arch)-fake'
   XRUBY_LIBDIR=`${RUBY-$BASERUBY} -rrbconfig -e ['puts RbConfig::CONFIG["libdir"]']`
@@ -3361,7 +3360,6 @@ AS_IF([test x"$cross_compiling" = xyes], [
   RUNRUBY_COMMAND='$(MINIRUBY) -I`cd $(srcdir)/lib; pwd`'
   RUNRUBY='$(RUNRUBY_COMMAND)'
   XRUBY='$(MINIRUBY)'
-  BOOTSTRAPRUBY_COMMAND='$(BOOTSTRAPRUBY) -r./$(arch)-fake'
   TEST_RUNNABLE=no
   CROSS_COMPILING=yes
   AC_DEFINE(CROSS_COMPILING, 1)
@@ -3372,9 +3370,6 @@ AS_IF([test x"$cross_compiling" = xyes], [
   RUNRUBY_COMMAND='$(MINIRUBY) $(tooldir)/runruby.rb --extout=$(EXTOUT) $(RUNRUBYOPT)'
   RUNRUBY='$(RUNRUBY_COMMAND) --'
   XRUBY='$(RUNRUBY)'
-  AS_CASE(["$HAVE_BASERUBY"],
-  [yes], [BOOTSTRAPRUBY_COMMAND='$(BOOTSTRAPRUBY) -r./$(arch)-fake'],
-  [BOOTSTRAPRUBY='$(MINIRUBY)'])
   TEST_RUNNABLE=yes
   CROSS_COMPILING=no
 ])
@@ -3386,8 +3381,6 @@ AC_SUBST(PREP)
 AC_SUBST(RUNRUBY_COMMAND)
 AC_SUBST(RUNRUBY)
 AC_SUBST(XRUBY)
-AC_SUBST(BOOTSTRAPRUBY)
-AC_SUBST(BOOTSTRAPRUBY_COMMAND)
 AC_SUBST(EXTOUT, [${EXTOUT=.ext}])
 
 FIRSTMAKEFILE=""

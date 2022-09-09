@@ -137,6 +137,7 @@ impl Assembler
         /// to be split in case their displacement doesn't fit into 9 bits.
         fn split_load_operand(asm: &mut Assembler, opnd: Opnd) -> Opnd {
             match opnd {
+                Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
                 Opnd::Mem(_) => {
                     let split_opnd = split_memory_address(asm, opnd);
                     asm.load(split_opnd)
@@ -235,7 +236,7 @@ impl Assembler
             // such that only the Op::Load instruction needs to handle that
             // case. If the values aren't heap objects then we'll treat them as
             // if they were just unsigned integer.
-            let is_load = matches!(insn, Insn::Load { .. });
+            let is_load = matches!(insn, Insn::Load { .. } | Insn::LoadInto { .. });
             let mut opnd_iter = insn.opnd_iter_mut();
 
             while let Some(opnd) = opnd_iter.next() {
@@ -284,9 +285,8 @@ impl Assembler
                 Insn::CCall { opnds, target, .. } => {
                     assert!(opnds.len() <= C_ARG_OPNDS.len());
 
-                    // For each of the operands we're going to first load them
-                    // into a register and then move them into the correct
-                    // argument register.
+                    // Load each operand into the corresponding argument
+                    // register.
                     // Note: the iteration order is reversed to avoid corrupting x0,
                     // which is both the return value and first argument register
                     for (idx, opnd) in opnds.into_iter().enumerate().rev() {
@@ -295,10 +295,11 @@ impl Assembler
                         // a UImm of 0 along as the argument to the move.
                         let value = match opnd {
                             Opnd::UImm(0) | Opnd::Imm(0) => Opnd::UImm(0),
-                            _ => split_load_operand(asm, opnd)
+                            Opnd::Mem(_) => split_memory_address(asm, opnd),
+                            _ => opnd
                         };
 
-                        asm.mov(C_ARG_OPNDS[idx], value);
+                        asm.load_into(C_ARG_OPNDS[idx], value);
                     }
 
                     // Now we push the CCall without any arguments so that it
@@ -306,18 +307,29 @@ impl Assembler
                     asm.ccall(target.unwrap_fun_ptr(), vec![]);
                 },
                 Insn::Cmp { left, right } => {
-                    let opnd0 = match left {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => left,
-                        _ => split_load_operand(asm, left)
-                    };
-
+                    let opnd0 = split_load_operand(asm, left);
                     let opnd1 = split_shifted_immediate(asm, right);
                     asm.cmp(opnd0, opnd1);
                 },
                 Insn::CRet(opnd) => {
-                    if opnd != Opnd::Reg(C_RET_REG) {
-                        let value = split_load_operand(asm, opnd);
-                        asm.mov(C_RET_OPND, value);
+                    match opnd {
+                        // If the value is already in the return register, then
+                        // we don't need to do anything.
+                        Opnd::Reg(C_RET_REG) => {},
+
+                        // If the value is a memory address, we need to first
+                        // make sure the displacement isn't too large and then
+                        // load it into the return register.
+                        Opnd::Mem(_) => {
+                            let split = split_memory_address(asm, opnd);
+                            asm.load_into(C_RET_OPND, split);
+                        },
+
+                        // Otherwise we just need to load the value into the
+                        // return register.
+                        _ => {
+                            asm.load_into(C_RET_OPND, opnd);
+                        }
                     }
                     asm.cret(C_RET_OPND);
                 },
@@ -375,7 +387,20 @@ impl Assembler
                     }
                 },
                 Insn::Load { opnd, .. } => {
-                    split_load_operand(asm, opnd);
+                    let value = match opnd {
+                        Opnd::Mem(_) => split_memory_address(asm, opnd),
+                        _ => opnd
+                    };
+
+                    asm.load(value);
+                },
+                Insn::LoadInto { dest, opnd } => {
+                    let value = match opnd {
+                        Opnd::Mem(_) => split_memory_address(asm, opnd),
+                        _ => opnd
+                    };
+
+                    asm.load_into(dest, value);
                 },
                 Insn::LoadSExt { opnd, .. } => {
                     match opnd {
@@ -442,28 +467,24 @@ impl Assembler
                     // The value being stored must be in a register, so if it's
                     // not already one we'll load it first.
                     let opnd1 = match src {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => src,
+                         // If the first operand is zero, then we can just use
+                        // the zero register.
+                        Opnd::UImm(0) | Opnd::Imm(0) => Opnd::Reg(XZR_REG),
+                        // Otherwise we'll check if we need to load it first.
                         _ => split_load_operand(asm, src)
                     };
 
                     asm.store(opnd0, opnd1);
                 },
                 Insn::Sub { left, right, .. } => {
-                    let opnd0 = match left {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => left,
-                        _ => split_load_operand(asm, left)
-                    };
-
+                    let opnd0 = split_load_operand(asm, left);
                     let opnd1 = split_shifted_immediate(asm, right);
                     asm.sub(opnd0, opnd1);
                 },
                 Insn::Test { left, right } => {
                     // The value being tested must be in a register, so if it's
                     // not already one we'll load it first.
-                    let opnd0 = match left {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => left,
-                        _ => split_load_operand(asm, left)
-                    };
+                    let opnd0 = split_load_operand(asm, left);
 
                     // The second value must be either a register or an
                     // unsigned immediate that can be encoded as a bitmask
@@ -568,13 +589,15 @@ impl Assembler
                 Target::CodePtr(dst_ptr) => {
                     let dst_addr = dst_ptr.into_i64();
                     let src_addr = cb.get_write_ptr().into_i64();
-                    let offset = dst_addr - src_addr;
 
-                    let num_insns = if bcond_offset_fits_bits(offset) {
+                    let num_insns = if bcond_offset_fits_bits((dst_addr - src_addr) / 4) {
                         // If the jump offset fits into the conditional jump as
                         // an immediate value and it's properly aligned, then we
-                        // can use the b.cond instruction directly.
-                        bcond(cb, CONDITION, A64Opnd::new_imm(offset));
+                        // can use the b.cond instruction directly. We're safe
+                        // to use as i32 here since we already checked that it
+                        // fits.
+                        let bytes = (dst_addr - src_addr) as i32;
+                        bcond(cb, CONDITION, InstructionOffset::from_bytes(bytes));
 
                         // Here we're going to return 1 because we've only
                         // written out 1 instruction.
@@ -583,12 +606,12 @@ impl Assembler
                         // Otherwise, we need to load the address into a
                         // register and use the branch register instruction.
                         let dst_addr = dst_ptr.into_u64();
-                        let load_insns: i64 = emit_load_size(dst_addr).into();
+                        let load_insns: i32 = emit_load_size(dst_addr).into();
 
                         // We're going to write out the inverse condition so
                         // that if it doesn't match it will skip over the
                         // instructions used for branching.
-                        bcond(cb, Condition::inverse(CONDITION), A64Opnd::new_imm((load_insns + 2) * 4));
+                        bcond(cb, Condition::inverse(CONDITION), (load_insns + 2).into());
                         emit_load_value(cb, Assembler::SCRATCH0, dst_addr);
                         br(cb, Assembler::SCRATCH0);
 
@@ -609,7 +632,8 @@ impl Assembler
                     // offset. We're going to assume we can fit into a single
                     // b.cond instruction. It will panic otherwise.
                     cb.label_ref(label_idx, 4, |cb, src_addr, dst_addr| {
-                        bcond(cb, CONDITION, A64Opnd::new_imm(dst_addr - (src_addr - 4)));
+                        let bytes: i32 = (dst_addr - (src_addr - 4)).try_into().unwrap();
+                        bcond(cb, CONDITION, InstructionOffset::from_bytes(bytes));
                     });
                 },
                 Target::FunPtr(_) => unreachable!()
@@ -710,7 +734,8 @@ impl Assembler
                     // our IR we have the address first and the register second.
                     stur(cb, src.into(), dest.into());
                 },
-                Insn::Load { opnd, out } => {
+                Insn::Load { opnd, out } |
+                Insn::LoadInto { opnd, dest: out } => {
                     match *opnd {
                         Opnd::Reg(_) | Opnd::InsnOut { .. } => {
                             mov(cb, out.into(), opnd.into());
@@ -734,8 +759,8 @@ impl Assembler
                             // references to GC'd Value operands. If the value
                             // being loaded is a heap object, we'll report that
                             // back out to the gc_offsets list.
-                            ldr_literal(cb, out.into(), 2);
-                            b(cb, A64Opnd::new_imm(1 + (SIZEOF_VALUE as i64) / 4));
+                            ldr_literal(cb, out.into(), 2.into());
+                            b(cb, InstructionOffset::from_bytes(4 + (SIZEOF_VALUE as i32)));
                             cb.write_bytes(&value.as_u64().to_le_bytes());
 
                             let ptr_offset: u32 = (cb.get_write_pos() as u32) - (SIZEOF_VALUE as u32);
@@ -822,14 +847,11 @@ impl Assembler
                     // The offset to the call target in bytes
                     let src_addr = cb.get_write_ptr().into_i64();
                     let dst_addr = target.unwrap_fun_ptr() as i64;
-                    let offset = dst_addr - src_addr;
-                    // The offset in instruction count for BL's immediate
-                    let offset = offset / 4;
 
                     // Use BL if the offset is short enough to encode as an immediate.
                     // Otherwise, use BLR with a register.
-                    if b_offset_fits_bits(offset) {
-                        bl(cb, A64Opnd::new_imm(offset));
+                    if b_offset_fits_bits((dst_addr - src_addr) / 4) {
+                        bl(cb, InstructionOffset::from_bytes((dst_addr - src_addr) as i32));
                     } else {
                         emit_load_value(cb, Self::SCRATCH0, dst_addr as u64);
                         blr(cb, Self::SCRATCH0);
@@ -853,19 +875,22 @@ impl Assembler
                             let src_addr = cb.get_write_ptr().into_i64();
                             let dst_addr = dst_ptr.into_i64();
 
-                            // The offset between the two instructions in bytes.
-                            // Note that when we encode this into a b
-                            // instruction, we'll divide by 4 because it accepts
-                            // the number of instructions to jump over.
-                            let offset = dst_addr - src_addr;
-                            let offset = offset / 4;
-
                             // If the offset is short enough, then we'll use the
                             // branch instruction. Otherwise, we'll move the
                             // destination into a register and use the branch
                             // register instruction.
-                            let num_insns = emit_load_value(cb, Self::SCRATCH0, dst_addr as u64);
-                            br(cb, Self::SCRATCH0);
+                            let num_insns = if b_offset_fits_bits((dst_addr - src_addr) / 4) {
+                                b(cb, InstructionOffset::from_bytes((dst_addr - src_addr) as i32));
+                                0
+                            } else {
+                                let num_insns = emit_load_value(cb, Self::SCRATCH0, dst_addr as u64);
+                                br(cb, Self::SCRATCH0);
+                                num_insns
+                            };
+
+                            // Make sure it's always a consistent number of
+                            // instructions in case it gets patched and has to
+                            // use the other branch.
                             for _ in num_insns..4 {
                                 nop(cb);
                             }
@@ -877,7 +902,8 @@ impl Assembler
                             // to assume we can fit into a single b instruction.
                             // It will panic otherwise.
                             cb.label_ref(*label_idx, 4, |cb, src_addr, dst_addr| {
-                                b(cb, A64Opnd::new_imm((dst_addr - (src_addr - 4)) / 4));
+                                let bytes: i32 = (dst_addr - (src_addr - 4)).try_into().unwrap();
+                                b(cb, InstructionOffset::from_bytes(bytes));
                             });
                         },
                         _ => unreachable!()

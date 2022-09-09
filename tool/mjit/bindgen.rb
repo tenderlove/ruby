@@ -194,6 +194,11 @@ class CParser
 end
 
 class ToRuby
+  def initialize(enums, macros)
+    @enums  = enums
+    @macros = macros
+  end
+
   def visit(node)
     send node.first, node
   end
@@ -227,7 +232,14 @@ class ToRuby
   alias MINUS lit
   alias RSHIFT lit
   alias LSHIFT lit
-  alias IDENT lit
+
+  def IDENT(node)
+    if @enums.include?(node.last) || @macros.include?(node.last)
+      "self.#{node.last}"
+    else
+      raise "unexpected macro token: #{node.last}"
+    end
+  end
 
   def VAR(node)
     visit node[1]
@@ -393,7 +405,7 @@ class BindingGenerator
           raise "unexpected first token: '#{tokens.first}' != '#{node.spelling}'"
         end
         ast = CParser.new(tokens.drop(1)).parse
-        ToRuby.new.visit(ast)
+        ToRuby.new(@enums.values.flatten, @macros).visit(ast)
       end
     end
   end

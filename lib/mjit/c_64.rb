@@ -5,19 +5,19 @@ module RubyVM::MJIT
 
   def C.INVALID_SHAPE_ID = self.SHAPE_MASK
 
-  def C.NOT_COMPILED_STACK_SIZE = - 1
+  def C.NOT_COMPILED_STACK_SIZE = -1
 
   def C.SHAPE_BITS = 32
 
-  def C.SHAPE_MASK = ( ( 1 << self.SHAPE_BITS ) - 1 )
+  def C.SHAPE_MASK = ((1 << self.SHAPE_BITS) - 1)
 
   def C.USE_LAZY_LOAD = false
 
   def C.USE_RVARGC = true
 
-  def C.VM_CALL_KW_SPLAT = ( 0x01 << self.VM_CALL_KW_SPLAT_bit )
+  def C.VM_CALL_KW_SPLAT = (0x01 << self.VM_CALL_KW_SPLAT_bit)
 
-  def C.VM_CALL_TAILCALL = ( 0x01 << self.VM_CALL_TAILCALL_bit )
+  def C.VM_CALL_TAILCALL = (0x01 << self.VM_CALL_TAILCALL_bit)
 
   def C.VM_METHOD_TYPE_CFUNC = 1
 
@@ -61,7 +61,7 @@ module RubyVM::MJIT
 
   def C.compile_status
     @compile_status ||= CType::Struct.new(
-      "compile_status", 120,
+      "compile_status", 112,
       success: [0, self._Bool],
       stack_size_for_pos: [64, CType::Pointer.new { CType::Immediate.new(4) }],
       local_stack_p: [128, self._Bool],
@@ -71,10 +71,9 @@ module RubyVM::MJIT
       compiled_id: [384, CType::Immediate.new(4)],
       compile_info: [448, CType::Pointer.new { self.rb_mjit_compile_info }],
       merge_ivar_guards_p: [512, self._Bool],
-      ivar_serial: [576, self.rb_serial_t],
-      max_ivar_index: [640, CType::Immediate.new(-5)],
-      inlined_iseqs: [704, CType::Pointer.new { CType::Pointer.new { self.rb_iseq_constant_body } }],
-      inline_context: [768, self.inlined_call_context],
+      max_ivar_index: [576, CType::Immediate.new(-5)],
+      inlined_iseqs: [640, CType::Pointer.new { CType::Pointer.new { self.rb_iseq_constant_body } }],
+      inline_context: [704, self.inlined_call_context],
     )
   end
 
