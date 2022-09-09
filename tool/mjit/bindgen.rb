@@ -58,7 +58,7 @@ class CParser
       when /\A0x[0-9a-f]*\z/ then [:NUMBER, tok]
       when '('               then [:LEFT_PAREN, tok]
       when ')'               then [:RIGHT_PAREN, tok]
-      when 'unsigned', 'int' then [:TYPE, tok]
+      when 'unsigned', 'int', 'uintptr_t' then [:TYPE, tok]
       when '<<'              then [:LSHIFT, tok]
       when '>>'              then [:RSHIFT, tok]
       when '-'               then [:MINUS, tok]
