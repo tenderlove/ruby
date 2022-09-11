@@ -45,7 +45,7 @@ struct rb_shape {
     struct rb_shape * parent; // Pointer to the parent
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
-    uint32_t iv_count;
+    uint32_t iv_index;
 };
 
 typedef struct rb_shape rb_shape_t;

@@ -2895,7 +2895,7 @@ rb_class_instance_allocate_internal(VALUE klass, VALUE flags, bool wb_protected)
     GC_ASSERT((flags & RUBY_T_MASK) == T_OBJECT);
     GC_ASSERT(flags & ROBJECT_EMBED);
 
-    uint32_t index_tbl_num_entries = RCLASS_EXT(klass)->max_iv_count;
+    uint32_t index_tbl_num_entries = RCLASS_EXT(klass)->max_iv_index + 1;
 
     size_t size;
     bool embed = true;
@@ -3452,10 +3452,9 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             if (shape) {
                 VALUE klass = RBASIC_CLASS(obj);
 
-                // Increment max_iv_count if applicable, used to determine size pool allocation
-                uint32_t num_of_ivs = shape->iv_count;
-                if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
-                    RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
+                // Increment max_iv_index if applicable, used to determine size pool allocation
+                if (RCLASS_EXT(klass)->max_iv_index < shape->iv_index) {
+                    RCLASS_EXT(klass)->max_iv_index = shape->iv_index;
                 }
             }
             xfree(RANY(obj)->as.object.as.heap.ivptr);

@@ -181,13 +181,12 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                             id,
                             shape);
 
-                    // Check if we should update max_iv_count on the object's class
+                    // Check if we should update max_iv_index on the object's class
                     if (BUILTIN_TYPE(obj) == T_OBJECT) {
                         VALUE klass = rb_obj_class(obj);
-                        uint32_t cur_iv_count = RCLASS_EXT(klass)->max_iv_count;
-                        uint32_t new_iv_count = new_shape->iv_count;
-                        if (new_iv_count > cur_iv_count) {
-                            RCLASS_EXT(klass)->max_iv_count = new_iv_count;
+                        uint32_t new_iv_index = new_shape->iv_index;
+                        if (new_iv_index > RCLASS_EXT(klass)->max_iv_index) {
+                            RCLASS_EXT(klass)->max_iv_index = new_iv_index;
                         }
                     }
 
@@ -197,7 +196,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                     rb_shape_set_shape_by_id(next_shape_id, new_shape);
 
                     if (tt == SHAPE_FROZEN) {
-                        new_shape->iv_count--;
+                        new_shape->iv_index--;
                         RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                     }
 
@@ -274,7 +273,7 @@ int
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE *value) {
     while (shape->parent) {
         if (shape->edge_name == id) {
-            *value = shape->iv_count - 1;
+            *value = shape->iv_index;
             return true;
         }
         shape = shape->parent;
@@ -297,7 +296,7 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
     shape_set_shape_id(shape, shape_id);
 
     shape->edge_name = edge_name;
-    shape->iv_count = parent ? parent->iv_count + 1 : 0;
+    shape->iv_index = parent ? parent->iv_index + 1 : -1;
 
     RB_OBJ_WRITE(shape, &shape->parent, parent);
 
@@ -315,7 +314,7 @@ rb_shape_generate_iv_table(rb_shape_t* shape) {
     struct rb_id_table *iv_table = rb_id_table_create(0);
     uint32_t index = 0;
     while (shape->parent) {
-        rb_id_table_insert(iv_table, shape->edge_name, shape->iv_count - (VALUE)index - 1);
+        rb_id_table_insert(iv_table, shape->edge_name, shape->iv_index - (VALUE)index);
         index++;
         shape = shape->parent;
     }
