@@ -1779,26 +1779,22 @@ iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, 
 static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
-    struct rb_id_table *iv_index_tbl;
     rb_shape_t* shape = rb_shape_get_shape(obj);
+    if (shape->iv_index < 0) return;
 
-    iv_index_tbl = rb_shape_generate_iv_table(shape);
-    if (!iv_index_tbl) {
-        return;
-    }
     iterate_over_shapes_with_callback(obj, shape, ROBJECT_IVPTR(obj), (int)shape->iv_index, func, arg);
 }
 
 static void
 gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
-    struct gen_ivtbl *ivtbl;
     rb_shape_t *shape = rb_shape_get_shape(obj);
-    struct rb_id_table *iv_index_tbl = rb_shape_generate_iv_table(shape);
-    if (!iv_index_tbl) return;
+    if (shape->iv_index < 0) return;
+
+    struct gen_ivtbl *ivtbl;
     if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes_with_callback(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)shape->iv_index, func, arg);
+    iterate_over_shapes_with_callback(obj, shape, ivtbl->ivptr, (int)shape->iv_index, func, arg);
 }
 
 void

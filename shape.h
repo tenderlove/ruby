@@ -132,7 +132,6 @@ int rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE * value);
 MJIT_SYMBOL_EXPORT_END
 
 rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent);
-struct rb_id_table * rb_shape_generate_iv_table(rb_shape_t* shape);
 
 bool rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id);
 void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);

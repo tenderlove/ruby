@@ -305,23 +305,6 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
     return shape;
 }
 
-MJIT_FUNC_EXPORTED struct rb_id_table *
-rb_shape_generate_iv_table(rb_shape_t* shape) {
-    if (rb_shape_frozen_shape_p(shape)) {
-        return rb_shape_generate_iv_table(shape->parent);
-    }
-
-    struct rb_id_table *iv_table = rb_id_table_create(0);
-    uint32_t index = 0;
-    while (shape->parent) {
-        rb_id_table_insert(iv_table, shape->edge_name, shape->iv_index - (VALUE)index);
-        index++;
-        shape = shape->parent;
-    }
-
-    return iv_table;
-}
-
 MJIT_FUNC_EXPORTED void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
