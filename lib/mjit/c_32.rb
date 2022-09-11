@@ -3,7 +3,13 @@ require_relative 'c_type'
 module RubyVM::MJIT
   C = Object.new
 
+  def C.INVALID_SHAPE_ID = self.SHAPE_MASK
+
   def C.NOT_COMPILED_STACK_SIZE = -1
+
+  def C.SHAPE_BITS = 16
+
+  def C.SHAPE_MASK = ((1 << self.SHAPE_BITS) - 1)
 
   def C.USE_LAZY_LOAD = false
 
@@ -41,6 +47,10 @@ module RubyVM::MJIT
     @VALUE ||= CType::Immediate.new(-5)
   end
 
+  def C.attr_index_t
+    @attr_index_t ||= CType::Immediate.new(-3)
+  end
+
   def C.compile_branch
     @compile_branch ||= CType::Struct.new(
       "compile_branch", 8,
@@ -51,7 +61,7 @@ module RubyVM::MJIT
 
   def C.compile_status
     @compile_status ||= CType::Struct.new(
-      "compile_status", 68,
+      "compile_status", 60,
       success: [0, self._Bool],
       stack_size_for_pos: [32, CType::Pointer.new { CType::Immediate.new(4) }],
       local_stack_p: [64, self._Bool],
@@ -61,10 +71,9 @@ module RubyVM::MJIT
       compiled_id: [192, CType::Immediate.new(4)],
       compile_info: [224, CType::Pointer.new { self.rb_mjit_compile_info }],
       merge_ivar_guards_p: [256, self._Bool],
-      ivar_serial: [288, self.rb_serial_t],
-      max_ivar_index: [352, CType::Immediate.new(-4)],
-      inlined_iseqs: [384, CType::Pointer.new { CType::Pointer.new { self.rb_iseq_constant_body } }],
-      inline_context: [416, self.inlined_call_context],
+      max_ivar_index: [288, CType::Immediate.new(-4)],
+      inlined_iseqs: [320, CType::Pointer.new { CType::Pointer.new { self.rb_iseq_constant_body } }],
+      inline_context: [352, self.inlined_call_context],
     )
   end
 
@@ -390,17 +399,17 @@ module RubyVM::MJIT
     @rb_serial_t ||= CType::Immediate.new(-6)
   end
 
+  def C.shape_id_t
+    @shape_id_t ||= CType::Immediate.new(-3)
+  end
+
   def C._Bool = CType::Bool.new
 
   def C.ID = CType::Stub.new(:ID)
 
-  def C.shape_id_t = CType::Stub.new(:shape_id_t)
-
   def C.rb_thread_struct = CType::Stub.new(:rb_thread_struct)
 
   def C.vm_call_handler = CType::Stub.new(:vm_call_handler)
-
-  def C.attr_index_t = CType::Stub.new(:attr_index_t)
 
   def C.method_missing_reason = CType::Stub.new(:method_missing_reason)
 
