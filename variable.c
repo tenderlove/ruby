@@ -64,11 +64,8 @@ static VALUE rb_const_search(VALUE klass, ID id, int exclude, int recurse, int v
 static st_table *generic_iv_tbl_;
 
 struct ivar_update {
-    union {
-        size_t iv_index_tbl_size;
-        struct gen_ivtbl *ivtbl;
-    } u;
-    uint32_t index;
+    struct gen_ivtbl *ivtbl;
+    uint32_t iv_index;
     rb_shape_t* shape;
     int iv_extended;
 };
@@ -1078,13 +1075,11 @@ gen_ivtbl_dup(const struct gen_ivtbl *orig)
 static uint32_t
 iv_index_tbl_newsize(struct ivar_update *ivup)
 {
-    if (!ivup->iv_extended) {
-        return (uint32_t)ivup->u.iv_index_tbl_size;
-    }
-    else {
-        uint32_t index = (uint32_t)ivup->index;	/* should not overflow */
+    uint32_t index = (uint32_t)ivup->shape->iv_count;	/* should not overflow */
+    if (ivup->iv_extended) {
         return (index+1) + (index+1)/4; /* (index+1)*1.25 */
     }
+    return index;
 }
 
 static int
@@ -1097,8 +1092,8 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
 
     if (existing) {
         ivtbl = (struct gen_ivtbl *)*v;
-        if (ivup->index < ivtbl->numiv) {
-            ivup->u.ivtbl = ivtbl;
+        if (ivup->iv_index < ivtbl->numiv) {
+            ivup->ivtbl = ivtbl;
             return ST_STOP;
         }
     }
@@ -1107,7 +1102,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     ivtbl = gen_ivtbl_resize(ivtbl, newsize);
     // Reinsert in to the hash table because ivtbl might be a newly resized chunk of memory
     *v = (st_data_t)ivtbl;
-    ivup->u.ivtbl = ivtbl;
+    ivup->ivtbl = ivtbl;
 #if !SHAPE_IN_BASIC_FLAGS
     ivtbl->shape_id = SHAPE_ID(ivup->shape);
 #endif
@@ -1399,12 +1394,10 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     ASSERT_vm_locking();
     VALUE ent_data;
 
-    // This sets the iv table in the ivup struct
-    ivup->u.iv_index_tbl_size = ivup->shape->iv_count;
     int r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
 
     if (r) {
-        ivup->index = (uint32_t) ent_data;
+        ivup->iv_index = (uint32_t) ent_data;
         ivup->iv_extended = 1;
     }
     else {
@@ -1431,7 +1424,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     }
     RB_VM_LOCK_LEAVE();
 
-    ivup.u.ivtbl->ivptr[ivup.index] = val;
+    ivup.ivtbl->ivptr[ivup.iv_index] = val;
 
     rb_shape_set_shape(obj, shape);
     RB_OBJ_WRITTEN(obj, Qundef, val);
@@ -1560,7 +1553,6 @@ static struct ivar_update
 obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
     struct ivar_update ivup;
-    ivup.iv_extended = 0;
     ivup.shape = rb_shape_get_shape(obj);
 
     RB_VM_LOCK_ENTER();
@@ -1587,12 +1579,12 @@ rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
     uint32_t len = ROBJECT_NUMIV(obj);
-    if (len <= (ivup.index)) {
+    if (len <= (ivup.iv_index)) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         rb_ensure_iv_list_size(obj, len, newsize);
     }
-    RUBY_ASSERT(ivup.index <= ROBJECT_NUMIV(obj));
-    return ivup.index;
+    RUBY_ASSERT(ivup.iv_index <= ROBJECT_NUMIV(obj));
+    return ivup.iv_index;
 }
 
 static VALUE
