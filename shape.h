@@ -137,4 +137,6 @@ bool rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id);
 void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
 
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj);
+VALUE rb_shape_flags_mask(void);
+
 #endif

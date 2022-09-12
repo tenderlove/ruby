@@ -271,6 +271,9 @@ pub type shape_id_t = u32;
 extern "C" {
     pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
 }
+extern "C" {
+    pub fn rb_shape_flags_mask() -> VALUE;
+}
 pub const idDot2: ruby_method_ids = 128;
 pub const idDot3: ruby_method_ids = 129;
 pub const idUPlus: ruby_method_ids = 132;

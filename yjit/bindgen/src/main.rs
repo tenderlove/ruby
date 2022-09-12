@@ -87,6 +87,7 @@ fn main() {
 
         // From shape.h
         .allowlist_function("rb_shape_get_shape_id")
+        .allowlist_function("rb_shape_flags_mask")
 
         // From ruby/internal/intern/object.h
         .allowlist_function("rb_obj_is_kind_of")

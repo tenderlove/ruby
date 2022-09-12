@@ -513,6 +513,12 @@ shape_max_shape_count(VALUE self)
     return INT2NUM(GET_VM()->max_shape_count);
 }
 
+VALUE
+rb_shape_flags_mask(void)
+{
+    return SHAPE_FLAG_MASK;
+}
+
 void
 Init_shape(void)
 {
