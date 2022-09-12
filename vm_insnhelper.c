@@ -1159,21 +1159,14 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
         uint32_t index;
 
-        if (is_attr) {
-            if (vm_cc_attr_index_p(cc)) {
-                index = vm_cc_attr_index(cc);
-            }
-            else {
-                goto general_path;
-            }
+        if (is_attr && vm_cc_attr_index_p(cc)) {
+            index = vm_cc_attr_index(cc);
+        }
+        else if (!is_attr && vm_ic_attr_index_p(ic)) {
+            index = vm_ic_attr_index(ic);
         }
         else {
-            if (vm_ic_attr_index_p(ic)) {
-                index = vm_ic_attr_index(ic);
-            }
-            else {
-                goto general_path;
-            }
+            return Qnil;
         }
 
         val = ivar_list[index];
