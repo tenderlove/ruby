@@ -7,8 +7,6 @@ module RubyVM::MJIT
 
   def C.NOT_COMPILED_STACK_SIZE = -1
 
-  def C.SHAPE_BITS = 32
-
   def C.SHAPE_MASK = ((1 << self.SHAPE_BITS) - 1)
 
   def C.USE_LAZY_LOAD = false

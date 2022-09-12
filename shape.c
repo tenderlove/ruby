@@ -524,6 +524,7 @@ Init_shape(void)
     rb_define_method(rb_cShape, "edges", rb_shape_edges, 0);
     rb_define_method(rb_cShape, "depth", rb_shape_export_depth, 0);
     rb_define_method(rb_cShape, "id", rb_shape_id, 0);
+    rb_define_const(rb_cShape, "SHAPE_BITS", INT2NUM(SHAPE_BITS));
 
     rb_define_module_function(rb_cRubyVM, "debug_shape_transition_tree", shape_transition_tree, 0);
     rb_define_module_function(rb_cRubyVM, "debug_shape_count", shape_count, 0);

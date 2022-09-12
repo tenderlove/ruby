@@ -15,6 +15,8 @@ if RubyVM::MJIT.enabled?
   end
 
   class << RubyVM::MJIT::C
+    def SHAPE_BITS = RubyVM::Shape::SHAPE_BITS
+
     def ROBJECT_EMBED_LEN_MAX
       Primitive.cexpr! 'INT2NUM(RBIMPL_EMBED_LEN_MAX_OF(VALUE))'
     end

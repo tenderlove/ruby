@@ -531,7 +531,6 @@ nodes = HeaderParser.new(File.join(src_dir, 'mjit_compiler.h'), cflags: cflags).
 generator = BindingGenerator.new(
   macros: %w[
     NOT_COMPILED_STACK_SIZE
-    SHAPE_BITS
     SHAPE_MASK
     INVALID_SHAPE_ID
     USE_LAZY_LOAD
