@@ -1075,7 +1075,7 @@ gen_ivtbl_dup(const struct gen_ivtbl *orig)
 static uint32_t
 iv_index_tbl_newsize(struct ivar_update *ivup)
 {
-    uint32_t index = (uint32_t)ivup->shape->iv_index + 1; /* should not overflow */
+    uint32_t index = (uint32_t)ivup->shape->iv_count;	/* should not overflow */
     if (ivup->iv_extended) {
         return (index+1) + (index+1)/4; /* (index+1)*1.25 */
     }
@@ -1542,7 +1542,7 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 void
 rb_init_iv_list(VALUE obj)
 {
-    uint32_t newsize = (rb_shape_get_shape(obj)->iv_index + 1) * 2.0;
+    uint32_t newsize = rb_shape_get_shape(obj)->iv_count * 2.0;
     uint32_t len = ROBJECT_NUMIV(obj);
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
@@ -1753,24 +1753,24 @@ typedef int rb_ivar_foreach_callback_func(ID key, VALUE val, st_data_t arg);
 st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 static void
-iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int iv_index, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
+iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, unsigned int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
     if (rb_shape_root_shape_p(shape)) {
         return;
     }
     else if (rb_shape_frozen_shape_p(shape)) {
-        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, iv_index, callback, arg);
+        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, numiv, callback, arg);
         return;
     }
-    else if (iv_index < 0) {
-        rb_bug("bad iv_index iterating over shapes\n");
+    else if (numiv <= 0) {
+        rb_bug("bad numiv iterating over shapes\n");
     }
     else {
-        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, iv_index - 1, callback, arg);
+        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, numiv - 1, callback, arg);
 
-        if (iv_list[iv_index] != Qundef) {
+        if (iv_list[numiv - 1] != Qundef) {
             ID id = shape->edge_name;
 
-            callback(id, iv_list[iv_index], arg);
+            callback(id, iv_list[numiv - 1], arg);
         }
         return;
     }
@@ -1780,21 +1780,21 @@ static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     rb_shape_t* shape = rb_shape_get_shape(obj);
-    if (shape->iv_index < 0) return;
+    if (shape->iv_count == 0) return;
 
-    iterate_over_shapes_with_callback(obj, shape, ROBJECT_IVPTR(obj), (int)shape->iv_index, func, arg);
+    iterate_over_shapes_with_callback(obj, shape, ROBJECT_IVPTR(obj), shape->iv_count, func, arg);
 }
 
 static void
 gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     rb_shape_t *shape = rb_shape_get_shape(obj);
-    if (shape->iv_index < 0) return;
+    if (shape->iv_count == 0) return;
 
     struct gen_ivtbl *ivtbl;
     if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes_with_callback(obj, shape, ivtbl->ivptr, (int)shape->iv_index, func, arg);
+    iterate_over_shapes_with_callback(obj, shape, ivtbl->ivptr, shape->iv_count, func, arg);
 }
 
 void
@@ -1900,7 +1900,7 @@ rb_ivar_count(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-	if (rb_shape_get_shape(obj)->iv_index >= 0) {
+	if (rb_shape_get_shape(obj)->iv_count > 0) {
 	    st_index_t i, count, num = ROBJECT_NUMIV(obj);
 	    const VALUE *const ivptr = ROBJECT_IVPTR(obj);
 	    for (i = count = 0; i < num; ++i) {

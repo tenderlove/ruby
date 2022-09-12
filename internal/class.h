@@ -64,7 +64,7 @@ struct rb_classext_struct {
     const VALUE refined_class;
     rb_alloc_func_t allocator;
     const VALUE includer;
-    uint32_t max_iv_index;
+    uint32_t max_iv_count;
     uint16_t shape_id;
 };
 

@@ -181,12 +181,13 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                             id,
                             shape);
 
-                    // Check if we should update max_iv_index on the object's class
+                    // Check if we should update max_iv_count on the object's class
                     if (BUILTIN_TYPE(obj) == T_OBJECT) {
                         VALUE klass = rb_obj_class(obj);
-                        uint32_t new_iv_index = new_shape->iv_index;
-                        if (new_iv_index > RCLASS_EXT(klass)->max_iv_index) {
-                            RCLASS_EXT(klass)->max_iv_index = new_iv_index;
+                        uint32_t cur_iv_count = RCLASS_EXT(klass)->max_iv_count;
+                        uint32_t new_iv_count = new_shape->iv_count;
+                        if (new_iv_count > cur_iv_count) {
+                            RCLASS_EXT(klass)->max_iv_count = new_iv_count;
                         }
                     }
 
@@ -196,7 +197,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                     rb_shape_set_shape_by_id(next_shape_id, new_shape);
 
                     if (tt == SHAPE_FROZEN) {
-                        new_shape->iv_index--;
+                        new_shape->iv_count--;
                         RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                     }
 
@@ -273,7 +274,7 @@ int
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE *value) {
     while (shape->parent) {
         if (shape->edge_name == id) {
-            *value = shape->iv_index;
+            *value = shape->iv_count - 1;
             return true;
         }
         shape = shape->parent;
@@ -296,7 +297,7 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
     shape_set_shape_id(shape, shape_id);
 
     shape->edge_name = edge_name;
-    shape->iv_index = parent ? parent->iv_index + 1 : -1;
+    shape->iv_count = parent ? parent->iv_count + 1 : 0;
 
     RB_OBJ_WRITE(shape, &shape->parent, parent);
 
