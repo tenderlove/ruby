@@ -287,6 +287,7 @@ shape_alloc(void)
 {
     rb_shape_t *shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
     FL_SET_RAW((VALUE)shape, RUBY_FL_SHAREABLE);
+    FL_SET_RAW((VALUE)shape, RUBY_FL_PROMOTED1);
     return shape;
 }
 

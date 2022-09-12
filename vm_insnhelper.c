@@ -1434,7 +1434,6 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t d
                             rb_init_iv_list(obj);
                         }
                         ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
-                        RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
                     }
                     else {
                         RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
