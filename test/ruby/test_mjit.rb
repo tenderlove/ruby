@@ -145,7 +145,7 @@ class TestMJIT < Test::Unit::TestCase
     end;
 
     # optimized getinstancevariable call
-    assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: '33', success_count: 2, min_calls: 2)
+    assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: '33', success_count: 1, min_calls: 2)
     begin;
       class A
         def initialize
