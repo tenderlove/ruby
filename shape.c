@@ -6,7 +6,7 @@
 #include "internal/variable.h"
 
 /*
- * Getters for root_shape, frozen_root_shape
+ * Shape getters
  */
 static rb_shape_t*
 rb_shape_get_root_shape(void) {
@@ -20,17 +20,11 @@ rb_shape_get_frozen_root_shape(void) {
     return vm->frozen_root_shape;
 }
 
-/*
- * Predicate method for root_shape
- */
 bool
 rb_shape_root_shape_p(rb_shape_t* shape) {
     return shape == rb_shape_get_root_shape();
 }
 
-/*
- * Shape getters
- */
 rb_shape_t*
 rb_shape_get_shape_by_id(shape_id_t shape_id)
 {
