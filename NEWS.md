@@ -96,6 +96,13 @@ Note that each entry is kept to a minimum, see links for details.
 
 Note: We're only listing outstanding class updates.
 
+* Encoding
+    * Encoding#replicate has been deprecated and will be removed in 3.3. [[Feature #18949]]
+    * The dummy `Encoding::UTF_16` and `Encoding::UTF_32` encodings no longer
+      try to dynamically guess the endian based on a byte order mark.
+      Use `Encoding::UTF_16BE/UTF_16LE` and `Encoding::UTF_32BE/UTF_32LE` instead.
+      This change speeds up getting the encoding of a String. [[Feature #18949]]
+
 * Enumerator
     * Enumerator.product has been added.  Enumerator::Product is the implementation. [[Feature #18685]]
 
@@ -292,3 +299,4 @@ The following deprecated APIs are removed.
 [Feature #18788]: https://bugs.ruby-lang.org/issues/18788
 [Feature #18809]: https://bugs.ruby-lang.org/issues/18809
 [Feature #18481]: https://bugs.ruby-lang.org/issues/18481
+[Feature #18949]: https://bugs.ruby-lang.org/issues/18949

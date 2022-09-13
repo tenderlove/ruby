@@ -3562,6 +3562,15 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
     if (IS_INSN_ID(iobj, dup)) {
         if (IS_NEXT_INSN_ID(&iobj->link, setlocal)) {
             LINK_ELEMENT *set1 = iobj->link.next, *set2 = NULL;
+
+            /*
+            *  dup
+            *  setlocal x, y
+            *  setlocal x, y
+            * =>
+            *  dup
+            *  setlocal x, y
+            */
             if (IS_NEXT_INSN_ID(set1, setlocal)) {
                 set2 = set1->next;
                 if (OPERAND_AT(set1, 0) == OPERAND_AT(set2, 0) &&
@@ -3570,6 +3579,16 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
                     ELEM_REMOVE(&iobj->link);
                 }
             }
+
+            /*
+            *  dup
+            *  setlocal x, y
+            *  dup
+            *  setlocal x, y
+            * =>
+            *  dup
+            *  setlocal x, y
+            */
             else if (IS_NEXT_INSN_ID(set1, dup) &&
                      IS_NEXT_INSN_ID(set1->next, setlocal)) {
                 set2 = set1->next->next;
@@ -3582,6 +3601,13 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
         }
     }
 
+    /*
+    *  getlocal x, y
+    *  dup
+    *  setlocal x, y
+    * =>
+    *  dup
+    */
     if (IS_INSN_ID(iobj, getlocal)) {
         LINK_ELEMENT *niobj = &iobj->link;
         if (IS_NEXT_INSN_ID(niobj, dup)) {
@@ -3597,6 +3623,15 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
         }
     }
 
+    /*
+    *  opt_invokebuiltin_delegate
+    *  trace
+    *  leave
+    * =>
+    *  opt_invokebuiltin_delegate_leave
+    *  trace
+    *  leave
+    */
     if (IS_INSN_ID(iobj, opt_invokebuiltin_delegate)) {
         if (IS_TRACE(iobj->link.next)) {
             if (IS_NEXT_INSN_ID(iobj->link.next, leave)) {
@@ -3605,6 +3640,13 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
         }
     }
 
+    /*
+    *  getblockparam
+    *  branchif / branchunless
+    * =>
+    *  getblockparamproxy
+    *  branchif / branchunless
+    */
     if (IS_INSN_ID(iobj, getblockparam)) {
         if (IS_NEXT_INSN_ID(&iobj->link, branchif) || IS_NEXT_INSN_ID(&iobj->link, branchunless)) {
             iobj->insn_id = BIN(getblockparamproxy);
