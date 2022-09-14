@@ -1,5 +1,5 @@
 prelude: |
-  class TheClass
+  class Example
       def initialize
           @v0 = 1
           @v1 = 2
@@ -10,7 +10,6 @@ prelude: |
       def get_value_loop
           sum = 0
 
-          # 1M
           i = 0
           while i < 1000000
               # 10 times to de-emphasize loop overhead
@@ -31,7 +30,7 @@ prelude: |
       end
   end
 
-  obj = TheClass.new
+  obj = Example.new
 benchmark:
   vm_ivar_get: |
     obj.get_value_loop
