@@ -109,7 +109,7 @@ module RubyVM::MJIT
       "iseq_inline_iv_cache_entry", 12,
       source_shape_id: [0, self.shape_id_t],
       dest_shape_id: [32, self.shape_id_t],
-      attr_index: [64, CType::Immediate.new(-4)],
+      attr_index: [64, self.attr_index_t],
     )
   end
 

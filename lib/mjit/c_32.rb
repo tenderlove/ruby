@@ -106,10 +106,10 @@ module RubyVM::MJIT
 
   def C.iseq_inline_iv_cache_entry
     @iseq_inline_iv_cache_entry ||= CType::Struct.new(
-      "iseq_inline_iv_cache_entry", 8,
+      "iseq_inline_iv_cache_entry", 6,
       source_shape_id: [0, self.shape_id_t],
       dest_shape_id: [16, self.shape_id_t],
-      attr_index: [32, CType::Immediate.new(-4)],
+      attr_index: [32, self.attr_index_t],
     )
   end
 

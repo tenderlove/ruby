@@ -270,6 +270,7 @@ extern "C" {
     pub fn rb_reg_new_ary(ary: VALUE, options: ::std::os::raw::c_int) -> VALUE;
 }
 pub type shape_id_t = u32;
+pub type attr_index_t = u32;
 extern "C" {
     pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
 }
@@ -611,7 +612,7 @@ pub struct iseq_inline_constant_cache {
 pub struct iseq_inline_iv_cache_entry {
     pub source_shape_id: shape_id_t,
     pub dest_shape_id: shape_id_t,
-    pub attr_index: u32,
+    pub attr_index: attr_index_t,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -706,15 +707,6 @@ extern "C" {
         cfp: *const rb_control_frame_t,
     ) -> *const rb_callable_method_entry_t;
 }
-extern "C" {
-    pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
-}
-extern "C" {
-    pub fn rb_gvar_get(arg1: ID) -> VALUE;
-}
-extern "C" {
-    pub fn rb_gvar_set(arg1: ID, arg2: VALUE) -> VALUE;
-}
 #[repr(C)]
 pub struct rb_cvar_class_tbl_entry {
     pub index: u32,
@@ -764,6 +756,15 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_hash_resurrect(hash: VALUE) -> VALUE;
+}
+extern "C" {
+    pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
+}
+extern "C" {
+    pub fn rb_gvar_get(arg1: ID) -> VALUE;
+}
+extern "C" {
+    pub fn rb_gvar_set(arg1: ID, arg2: VALUE) -> VALUE;
 }
 extern "C" {
     pub fn rb_vm_insn_decode(encoded: VALUE) -> ::std::os::raw::c_int;
