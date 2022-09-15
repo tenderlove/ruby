@@ -1547,23 +1547,6 @@ rb_init_iv_list(VALUE obj)
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
 
-// Retrieve or create the id-to-index mapping for a given object and an
-// instance variable name.
-static struct ivar_update
-obj_ensure_iv_index_mapping(VALUE obj, ID id)
-{
-    struct ivar_update ivup;
-    ivup.shape = rb_shape_get_shape(obj);
-
-    RB_VM_LOCK_ENTER();
-    {
-        iv_index_tbl_extend(obj, &ivup, id);
-    }
-    RB_VM_LOCK_LEAVE();
-
-    return ivup;
-}
-
 // Return the instance variable index for a given name and T_OBJECT object. The
 // mapping between name and index lives on `rb_obj_class(obj)` and is created
 // if not already present.
@@ -1571,26 +1554,42 @@ obj_ensure_iv_index_mapping(VALUE obj, ID id)
 // @note May raise when there are too many instance variables.
 // @note YJIT uses this function at compile time to simplify the work needed to
 //       access the variable at runtime.
-uint32_t
+attr_index_t
 rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
+    attr_index_t index;
+
+    // Ensure there is a transition for IVAR +id+
     rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
 
-    struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
+    // Get the current shape
+    rb_shape_t * shape = rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj));
+
+    VALUE x;
+    if (rb_shape_get_iv_index(shape, id, &x)) {
+        index = (attr_index_t)x;
+    }
+    else {
+        rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(id));
+    }
+
     uint32_t len = ROBJECT_NUMIV(obj);
-    if (len <= (ivup.iv_index)) {
+    if (len <= index) {
+        struct ivar_update ivup;
+        ivup.shape = shape;
+        ivup.iv_extended = 1;
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         rb_ensure_iv_list_size(obj, len, newsize);
     }
-    RUBY_ASSERT(ivup.iv_index <= ROBJECT_NUMIV(obj));
-    return ivup.iv_index;
+    RUBY_ASSERT(index <= ROBJECT_NUMIV(obj));
+    return index;
 }
 
 static VALUE
 obj_ivar_set(VALUE obj, ID id, VALUE val)
 {
-    uint32_t index = rb_obj_ensure_iv_index_mapping(obj, id);
+    attr_index_t index = rb_obj_ensure_iv_index_mapping(obj, id);
     RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[index], val);
     return val;
 }
