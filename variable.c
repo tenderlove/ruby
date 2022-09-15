@@ -1684,10 +1684,6 @@ ivar_set(VALUE obj, ID id, VALUE val)
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       {
-          /*
-           * Array of existing shapes which we can index into w a shape_id
-           * Hash (tree representation) of ivar transitions between shapes
-           */
           obj_ivar_set(obj, id, val);
           break;
       }

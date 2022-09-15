@@ -1086,11 +1086,10 @@ vm_get_cvar_base(const rb_cref_t *cref, const rb_control_frame_t *cfp, int top_l
     return klass;
 }
 
-ALWAYS_INLINE(static void fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, uint32_t index, shape_id_t shape_id));
+ALWAYS_INLINE(static void fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, attr_index_t index, shape_id_t shape_id));
 static inline void
-fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, uint32_t index, shape_id_t shape_id)
+fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, attr_index_t index, shape_id_t shape_id)
 {
-    // fill cache
     if (is_attr) {
         if (vm_cc_markable(cc)) {
             vm_cc_attr_index_set(cc, index, shape_id, shape_id);
@@ -1154,10 +1153,10 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         cached_id = vm_ic_attr_shape_id(ic);
     }
 
+    attr_index_t index;
+
     if (LIKELY(cached_id == shape_id)) {
         RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
-
-        uint32_t index;
 
         if (is_attr && vm_cc_attr_index_p(cc)) {
             index = vm_cc_attr_index(cc);
@@ -1175,8 +1174,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         goto ret;
     }
     else { // cache miss case
-        uint32_t iv_index;
-
 #if RUBY_DEBUG
         if (is_attr) {
             if (cached_id != INVALID_SHAPE_ID) {
@@ -1205,18 +1202,18 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         if (rb_shape_get_iv_index(shape, id, &iv_index_value)) {
             // This fills in the cache with the shared cache object.
             // "ent" is the shared cache object
-            iv_index = (uint32_t)iv_index_value;
-            fill_ivar_cache(iseq, ic, cc, is_attr, (uint32_t) iv_index_value, shape_id);
+            index = (attr_index_t)iv_index_value;
+            fill_ivar_cache(iseq, ic, cc, is_attr, index, shape_id);
 
             // get value
             if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
-                    LIKELY(iv_index < ROBJECT_NUMIV(obj))) {
-                val = ROBJECT_IVPTR(obj)[iv_index];
+                    LIKELY(index < ROBJECT_NUMIV(obj))) {
+                val = ROBJECT_IVPTR(obj)[index];
 
                 VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
             }
             else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-                val = rb_ivar_generic_lookup_with_index(obj, id, iv_index);
+                val = rb_ivar_generic_lookup_with_index(obj, id, index);
             }
         }
         else {
@@ -1259,18 +1256,18 @@ struct check_shape {
 };
 
 static void
-populate_cache(uint32_t index, rb_shape_t *shape, rb_shape_t *next_shape, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, bool is_attr)
+populate_cache(attr_index_t index, rb_shape_t *shape, rb_shape_t *next_shape, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, bool is_attr)
 {
     // Cache population code
     if (is_attr) {
         if (vm_cc_markable(cc)) {
-            vm_cc_attr_index_set(cc, (int)(index), SHAPE_ID(shape), SHAPE_ID(next_shape));
+            vm_cc_attr_index_set(cc, index, SHAPE_ID(shape), SHAPE_ID(next_shape));
             RB_OBJ_WRITTEN(cc, Qundef, (VALUE)shape);
             RB_OBJ_WRITTEN(cc, Qundef, (VALUE)next_shape);
         }
     }
     else {
-        vm_ic_attr_index_set(iseq, ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
+        vm_ic_attr_index_set(iseq, ic, index, SHAPE_ID(shape), SHAPE_ID(next_shape));
         RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)shape);
         RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
     }
@@ -1289,7 +1286,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             {
                 rb_check_frozen_internal(obj);
 
-                uint32_t index;
+                attr_index_t index;
 
                 uint32_t num_iv = ROBJECT_NUMIV(obj);
                 rb_shape_t* shape = rb_shape_get_shape(obj);
@@ -1300,7 +1297,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
                 VALUE x;
                 if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the hash stored in the transition tree
-                    index = (uint32_t)x;
+                    index = (attr_index_t)x;
                     if (index >= INT_MAX) {
                         rb_raise(rb_eArgError, "too many instance variables");
                     }
@@ -1316,7 +1313,6 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                     rb_init_iv_list(obj);
                 }
 
-                // TODO: fix this index still
                 VALUE *ptr = ROBJECT_IVPTR(obj);
                 RB_OBJ_WRITE(obj, &ptr[index], val);
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_iv_hit);
@@ -1332,10 +1328,10 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 rb_ivar_set(obj, id, val);
                 rb_shape_t * next_shape = rb_shape_get_shape(obj);
                 VALUE x;
-                uint32_t index;
+                attr_index_t index;
 
                 if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the hash stored in the transition tree
-                    index = (uint32_t)x;
+                    index = (attr_index_t)x;
                     if (index >= INT_MAX) {
                         rb_raise(rb_eArgError, "too many instance variables");
                     }
@@ -1366,9 +1362,9 @@ vm_setivar_slowpath_attr(VALUE obj, ID id, VALUE val, const struct rb_callcache 
     return vm_setivar_slowpath(obj, id, val, NULL, NULL, cc, true);
 }
 
-NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index));
+NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, attr_index_t index));
 static VALUE
-vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index)
+vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, attr_index_t index)
 {
 #if SHAPE_IN_BASIC_FLAGS
     shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
@@ -1376,7 +1372,7 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shap
     shape_id_t shape_id = rb_generic_shape_id(obj);
 #endif
 
-    // Do we have a cache hit *and* is the CC intitialized
+    // Cache hit case
     if (shape_id == source_shape_id) {
         RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
 
@@ -1398,19 +1394,18 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shap
 
         VALUE *ptr = ivtbl->ivptr;
 
-        // Ensuring we have a place to store the IV value
         RB_OBJ_WRITE(obj, &ptr[index], val);
 
         RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 
-        return val; /* inline cache hit */
+        return val;
     }
 
     return Qundef;
 }
 
 static inline VALUE
-vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index)
+vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, attr_index_t index)
 {
 #if OPT_IC_FOR_IVAR
     switch (BUILTIN_TYPE(obj)) {
@@ -1555,7 +1550,7 @@ static inline void
 vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC ic)
 {
     shape_id_t source_shape_id = vm_ic_attr_index_source_shape_id(ic);
-    uint32_t index = vm_ic_attr_index(ic);
+    attr_index_t index = vm_ic_attr_index(ic);
     shape_id_t dest_shape_id = vm_ic_attr_index_dest_shape_id(ic);
     if (UNLIKELY(vm_setivar(obj, id, val, source_shape_id, dest_shape_id, index) == Qundef)) {
         switch (BUILTIN_TYPE(obj)) {
@@ -3248,7 +3243,7 @@ vm_call_attrset_direct(rb_execution_context_t *ec, rb_control_frame_t *cfp, cons
     VALUE val = *(cfp->sp - 1);
     cfp->sp -= 2;
     shape_id_t source_shape_id = vm_cc_attr_index_source_shape_id(cc);
-    uint32_t index = vm_cc_attr_index(cc);
+    attr_index_t index = vm_cc_attr_index(cc);
     shape_id_t dest_shape_id = vm_cc_attr_index_dest_shape_id(cc);
     ID id = vm_cc_cme(cc)->def->body.attr.id;
     rb_check_frozen_internal(obj);
@@ -3866,7 +3861,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_SETUP_ARG(cfp, calling, ci);
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 
-	rb_check_arity(calling->argc, 1, 1);
+        rb_check_arity(calling->argc, 1, 1);
 
         const unsigned int aset_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG);
 

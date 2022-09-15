@@ -275,7 +275,7 @@ struct iseq_inline_constant_cache {
 struct iseq_inline_iv_cache_entry {
     shape_id_t source_shape_id;
     shape_id_t dest_shape_id;
-    uint32_t attr_index;
+    attr_index_t attr_index;
 };
 
 struct iseq_inline_cvar_cache_entry {

@@ -9,8 +9,6 @@
  * @brief      Internal header for Object.
  */
 #include "ruby/ruby.h"          /* for VALUE */
-#include "internal/class.h"     /* for RCLASS_IV_INDEX_TBL */
-#include "internal/variable.h"     /* for shapes */
 
 /* object.c */
 VALUE rb_class_search_ancestor(VALUE klass, VALUE super);
