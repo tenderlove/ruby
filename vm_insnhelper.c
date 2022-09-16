@@ -1122,6 +1122,8 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
     switch (BUILTIN_TYPE(obj)) {
         case T_OBJECT:
             ivar_list = ROBJECT_IVPTR(obj);
+            VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
+
 #if !SHAPE_IN_BASIC_FLAGS
             shape_id = ROBJECT_SHAPE_ID(obj);
 #endif
@@ -1134,7 +1136,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         default:
             if (FL_TEST_RAW(obj, FL_EXIVAR)) {
                 struct gen_ivtbl *ivtbl;
-                rb_ivar_generic_ivtbl_lookup(obj, &ivtbl);
+                rb_gen_ivtbl_get(obj, id, &ivtbl);
 #if !SHAPE_IN_BASIC_FLAGS
                 shape_id = ivtbl->shape_id;
 #endif
@@ -1191,27 +1193,16 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         }
 #endif
 
-        // We're only caching information for T_OBJECTS and things that store
-        // ivars in EXIVAR
-        if (!(LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) || FL_TEST_RAW(obj, FL_EXIVAR))) {
-            goto general_path;
-        }
-
         attr_index_t index;
-        rb_shape_t *shape = rb_shape_get_shape(obj);
+        rb_shape_t *shape = rb_shape_get_shape_by_id(shape_id);
+
         if (rb_shape_get_iv_index(shape, id, &index)) {
             // This fills in the cache with the shared cache object.
             // "ent" is the shared cache object
             fill_ivar_cache(iseq, ic, cc, is_attr, index, shape_id);
 
-            // get value
-            if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT)) {
-                val = ROBJECT_IVPTR(obj)[index];
-                VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
-            }
-            else {
-                val = rb_ivar_generic_lookup_with_index(obj, id, index);
-            }
+            // We fetched the ivar list above
+            val = ivar_list[index];
         }
         else {
             if (is_attr) {

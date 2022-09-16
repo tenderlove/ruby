@@ -983,21 +983,6 @@ rb_ivar_generic_ivtbl_lookup(VALUE obj, struct gen_ivtbl **ivtbl)
     return rb_gen_ivtbl_get(obj, 0, ivtbl);
 }
 
-MJIT_FUNC_EXPORTED VALUE
-rb_ivar_generic_lookup_with_index(VALUE obj, ID id, uint32_t index)
-{
-    struct gen_ivtbl *ivtbl;
-
-    if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
-        if (LIKELY(index < ivtbl->numiv)) {
-            VALUE val = ivtbl->ivptr[index];
-            return val;
-        }
-    }
-
-    return Qundef;
-}
-
 static VALUE
 generic_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
