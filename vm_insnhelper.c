@@ -1205,13 +1205,11 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             fill_ivar_cache(iseq, ic, cc, is_attr, index, shape_id);
 
             // get value
-            if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
-                    LIKELY(index < ROBJECT_NUMIV(obj))) {
+            if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT)) {
                 val = ROBJECT_IVPTR(obj)[index];
-
                 VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
             }
-            else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
+            else {
                 val = rb_ivar_generic_lookup_with_index(obj, id, index);
             }
         }
