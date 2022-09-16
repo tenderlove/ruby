@@ -92,11 +92,6 @@ rb_shape_get_shape(VALUE obj)
     return rb_shape_get_shape_by_id(rb_shape_get_shape_id(obj));
 }
 
-enum transition_type {
-    SHAPE_IVAR,
-    SHAPE_FROZEN,
-};
-
 static shape_id_t
 get_next_shape_id(void)
 {
@@ -129,15 +124,22 @@ get_next_shape_id(void)
     return next_shape_id;
 }
 
-static bool
-rb_shape_lookup_id(rb_shape_t* shape, ID id) {
+static rb_shape_t *
+rb_shape_lookup_id(rb_shape_t* shape, ID id, enum transition_type tt) {
     while (shape->parent) {
         if (shape->edge_name == id) {
-            return true;
+            // If the transition type is different, we don't
+            // want this to count as a "found" ID
+            if (tt == (enum transition_type)shape->type) {
+                return shape;
+            }
+            else {
+                return NULL;
+            }
         }
         shape = shape->parent;
     }
-    return false;
+    return NULL;
 }
 
 static rb_shape_t*
@@ -146,7 +148,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
     rb_shape_t *res = NULL;
     RB_VM_LOCK_ENTER();
     {
-        if (rb_shape_lookup_id(shape, id)) {
+        if (rb_shape_lookup_id(shape, id, tt)) {
             // If shape already contains the ivar that is being set, we'll return shape
             res = shape;
         }
@@ -176,25 +178,33 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                             id,
                             shape);
 
-                    // Check if we should update max_iv_count on the object's class
-                    if (BUILTIN_TYPE(obj) == T_OBJECT) {
-                        VALUE klass = rb_obj_class(obj);
-                        uint32_t cur_iv_count = RCLASS_EXT(klass)->max_iv_count;
-                        uint32_t new_iv_count = new_shape->iv_count;
-                        if (new_iv_count > cur_iv_count) {
-                            RCLASS_EXT(klass)->max_iv_count = new_iv_count;
-                        }
+                    new_shape->type = (uint8_t)tt;
+
+                    switch(tt) {
+                        case SHAPE_FROZEN:
+                            RB_OBJ_FREEZE_RAW((VALUE)new_shape);
+                            break;
+                        case SHAPE_IVAR:
+                            new_shape->iv_count = new_shape->parent->iv_count + 1;
+
+                            // Check if we should update max_iv_count on the object's class
+                            if (BUILTIN_TYPE(obj) == T_OBJECT) {
+                                VALUE klass = rb_obj_class(obj);
+                                if (new_shape->iv_count > RCLASS_EXT(klass)->max_iv_count) {
+                                    RCLASS_EXT(klass)->max_iv_count = new_shape->iv_count;
+                                }
+                            }
+                            break;
+                        case SHAPE_IVAR_UNDEF:
+                            break;
+                        case SHAPE_ROOT:
+                            rb_bug("Unreachable");
+                            break;
                     }
 
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
                     RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
-
                     rb_shape_set_shape_by_id(next_shape_id, new_shape);
-
-                    if (tt == SHAPE_FROZEN) {
-                        new_shape->iv_count--;
-                        RB_OBJ_FREEZE_RAW((VALUE)new_shape);
-                    }
 
                     res = new_shape;
                 }
@@ -208,7 +218,20 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
 MJIT_FUNC_EXPORTED int
 rb_shape_frozen_shape_p(rb_shape_t* shape)
 {
-    return RB_OBJ_FROZEN((VALUE)shape);
+    return SHAPE_FROZEN == (enum transition_type)shape->type;
+}
+
+void
+rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape)
+{
+    rb_shape_t* next_shape = get_next_shape_internal(shape, id, obj, SHAPE_IVAR_UNDEF);
+
+    if (shape == next_shape) {
+        return;
+    }
+
+    RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
+    rb_shape_set_shape(obj, next_shape);
 }
 
 void
@@ -269,8 +292,20 @@ bool
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value) {
     while (shape->parent) {
         if (shape->edge_name == id) {
-            *value = shape->iv_count - 1;
-            return true;
+            enum transition_type shape_type;
+            shape_type = (enum transition_type)shape->type;
+
+            switch(shape_type) {
+                case SHAPE_IVAR:
+                    RUBY_ASSERT(shape->iv_count > 0);
+                    *value = shape->iv_count - 1;
+                    return true;
+                case SHAPE_IVAR_UNDEF:
+                case SHAPE_ROOT:
+                    return false;
+                case SHAPE_FROZEN:
+                    rb_bug("Ivar should not exist on frozen transition\n");
+            }
         }
         shape = shape->parent;
     }
@@ -293,7 +328,7 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
     shape_set_shape_id(shape, shape_id);
 
     shape->edge_name = edge_name;
-    shape->iv_count = parent ? parent->iv_count + 1 : 0;
+    shape->iv_count = 0;
 
     RB_OBJ_WRITE(shape, &shape->parent, parent);
 
@@ -366,6 +401,13 @@ rb_shape_id(VALUE self) {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
     return INT2NUM(SHAPE_ID(shape));
+}
+
+static VALUE
+rb_shape_type(VALUE self) {
+    rb_shape_t * shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+    return INT2NUM(shape->type);
 }
 
 static VALUE
@@ -526,6 +568,11 @@ Init_shape(void)
     rb_define_method(rb_cShape, "edges", rb_shape_edges, 0);
     rb_define_method(rb_cShape, "depth", rb_shape_export_depth, 0);
     rb_define_method(rb_cShape, "id", rb_shape_id, 0);
+    rb_define_method(rb_cShape, "type", rb_shape_type, 0);
+    rb_define_const(rb_cShape, "SHAPE_ROOT", INT2NUM(SHAPE_ROOT));
+    rb_define_const(rb_cShape, "SHAPE_IVAR", INT2NUM(SHAPE_IVAR));
+    rb_define_const(rb_cShape, "SHAPE_IVAR_UNDEF", INT2NUM(SHAPE_IVAR_UNDEF));
+    rb_define_const(rb_cShape, "SHAPE_FROZEN", INT2NUM(SHAPE_FROZEN));
     rb_define_const(rb_cShape, "SHAPE_BITS", INT2NUM(SHAPE_BITS));
 
     rb_define_module_function(rb_cRubyVM, "debug_shape_transition_tree", shape_transition_tree, 0);

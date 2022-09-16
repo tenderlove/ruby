@@ -3,9 +3,11 @@
 #if (SIZEOF_UINT64_T == SIZEOF_VALUE)
 #define SIZEOF_SHAPE_T 4
 #define SHAPE_IN_BASIC_FLAGS 1
+typedef uint32_t attr_index_t;
 #else
 #define SIZEOF_SHAPE_T 2
 #define SHAPE_IN_BASIC_FLAGS 0
+typedef uint16_t attr_index_t;
 #endif
 
 #if RUBY_DEBUG || (defined(VM_CHECK_MODE) && VM_CHECK_MODE > 0)
@@ -45,10 +47,18 @@ struct rb_shape {
     struct rb_shape * parent; // Pointer to the parent
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
-    uint32_t iv_count;
+    attr_index_t iv_count;
+    uint8_t type;
 };
 
 typedef struct rb_shape rb_shape_t;
+
+enum transition_type {
+    SHAPE_ROOT,
+    SHAPE_IVAR,
+    SHAPE_FROZEN,
+    SHAPE_IVAR_UNDEF,
+};
 
 static inline shape_id_t
 IMEMO_CACHED_SHAPE_ID(VALUE cc)
@@ -66,8 +76,6 @@ IMEMO_SET_CACHED_SHAPE_ID(VALUE cc, shape_id_t shape_id)
 }
 
 #if SHAPE_IN_BASIC_FLAGS
-typedef uint32_t attr_index_t;
-
 static inline shape_id_t
 RBASIC_SHAPE_ID(VALUE obj)
 {
@@ -97,8 +105,8 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
     RBASIC_SET_SHAPE_ID(obj, shape_id);
 }
+
 #else
-typedef uint16_t attr_index_t;
 
 static inline shape_id_t
 ROBJECT_SHAPE_ID(VALUE obj)
@@ -126,6 +134,7 @@ shape_id_t rb_shape_get_shape_id(VALUE obj);
 rb_shape_t* rb_shape_get_shape(VALUE obj);
 int rb_shape_frozen_shape_p(rb_shape_t* shape);
 void rb_shape_transition_shape_frozen(VALUE obj);
+void rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape);
 void rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape);
 rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);

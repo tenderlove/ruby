@@ -984,26 +984,6 @@ rb_ivar_generic_ivtbl_lookup(VALUE obj, struct gen_ivtbl **ivtbl)
 }
 
 static VALUE
-generic_ivar_delete(VALUE obj, ID id, VALUE undef)
-{
-    struct gen_ivtbl *ivtbl;
-
-    if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
-        attr_index_t index;
-
-        if (iv_index_tbl_lookup(obj, id, &index)) {
-            if (index < ivtbl->numiv) {
-                VALUE ret = ivtbl->ivptr[index];
-
-                ivtbl->ivptr[index] = Qundef;
-                return ret == Qundef ? undef : ret;
-            }
-        }
-    }
-    return undef;
-}
-
-static VALUE
 generic_ivar_get(VALUE obj, ID id, VALUE undef)
 {
     struct gen_ivtbl *ivtbl;
@@ -1104,25 +1084,6 @@ generic_ivar_defined(VALUE obj, ID id)
     if (!rb_gen_ivtbl_get(obj, id, &ivtbl)) return Qfalse;
 
     return RBOOL((index < ivtbl->numiv) && (ivtbl->ivptr[index] != Qundef));
-}
-
-static int
-generic_ivar_remove(VALUE obj, ID id, VALUE *valp)
-{
-    struct gen_ivtbl *ivtbl;
-    attr_index_t index;
-
-    if (!iv_index_tbl_lookup(obj, id, &index)) return 0;
-    if (!rb_gen_ivtbl_get(obj, id, &ivtbl)) return 0;
-
-    if (index < ivtbl->numiv) {
-        if (ivtbl->ivptr[index] != Qundef) {
-            *valp = ivtbl->ivptr[index];
-            ivtbl->ivptr[index] = Qundef;
-            return 1;
-        }
-    }
-    return 0;
 }
 
 static void
@@ -1330,26 +1291,12 @@ rb_attr_get(VALUE obj, ID id)
 static VALUE
 rb_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
-    VALUE *ptr;
-    uint32_t len;
+    rb_check_frozen(obj);
+
+    VALUE val = Qnil;
     attr_index_t index;
 
-    rb_check_frozen(obj);
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        len = ROBJECT_NUMIV(obj);
-        ptr = ROBJECT_IVPTR(obj);
-
-        if (iv_index_tbl_lookup(obj, id, &index) &&
-            index < len) {
-            VALUE val = ptr[index];
-            ptr[index] = Qundef;
-
-            if (val != Qundef) {
-                return val;
-            }
-        }
-        break;
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
@@ -1360,11 +1307,33 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
             }
         }
         break;
-      default:
-        if (FL_TEST(obj, FL_EXIVAR))
-            return generic_ivar_delete(obj, id, undef);
+      case T_OBJECT: {
+        rb_shape_t * shape = rb_shape_get_shape(obj);
+        if (rb_shape_get_iv_index(shape, id, &index)) {
+            rb_shape_transition_shape_remove_ivar(obj, id, shape);
+            val = ROBJECT_IVPTR(obj)[index];
+            ROBJECT_IVPTR(obj)[index] = Qundef;
+            return val;
+        }
+
         break;
+      }
+      default: {
+        rb_shape_t * shape = rb_shape_get_shape(obj);
+
+        if (rb_shape_get_iv_index(shape, id, &index)) {
+            rb_shape_transition_shape_remove_ivar(obj, id, shape);
+            struct gen_ivtbl *ivtbl;
+            rb_gen_ivtbl_get(obj, id, &ivtbl);
+            val = ivtbl->ivptr[index];
+            ivtbl->ivptr[index] = Qundef;
+            return val;
+        }
+
+        break;
+      }
     }
+
     return undef;
 }
 
@@ -1730,26 +1699,21 @@ typedef int rb_ivar_foreach_callback_func(ID key, VALUE val, st_data_t arg);
 st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 static void
-iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, unsigned int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
-    if (rb_shape_root_shape_p(shape)) {
-        return;
-    }
-    else if (rb_shape_frozen_shape_p(shape)) {
-        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, numiv, callback, arg);
-        return;
-    }
-    else if (numiv <= 0) {
-        rb_bug("bad numiv iterating over shapes\n");
-    }
-    else {
-        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, numiv - 1, callback, arg);
-
-        if (iv_list[numiv - 1] != Qundef) {
-            ID id = shape->edge_name;
-
-            callback(id, iv_list[numiv - 1], arg);
-        }
-        return;
+iterate_over_shapes_with_callback(rb_shape_t *shape, VALUE* iv_list, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
+    switch ((enum transition_type)shape->type) {
+        case SHAPE_ROOT:
+            return;
+        case SHAPE_IVAR:
+            iterate_over_shapes_with_callback(shape->parent, iv_list, callback, arg);
+            VALUE val = iv_list[shape->iv_count - 1];
+            if (val != Qundef) {
+                callback(shape->edge_name, val, arg);
+            }
+            return;
+        case SHAPE_IVAR_UNDEF:
+        case SHAPE_FROZEN:
+            iterate_over_shapes_with_callback(shape->parent, iv_list, callback, arg);
+            return;
     }
 }
 
@@ -1757,21 +1721,17 @@ static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     rb_shape_t* shape = rb_shape_get_shape(obj);
-    if (shape->iv_count == 0) return;
-
-    iterate_over_shapes_with_callback(obj, shape, ROBJECT_IVPTR(obj), shape->iv_count, func, arg);
+    iterate_over_shapes_with_callback(shape, ROBJECT_IVPTR(obj), func, arg);
 }
 
 static void
 gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     rb_shape_t *shape = rb_shape_get_shape(obj);
-    if (shape->iv_count == 0) return;
-
     struct gen_ivtbl *ivtbl;
     if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes_with_callback(obj, shape, ivtbl->ivptr, shape->iv_count, func, arg);
+    iterate_over_shapes_with_callback(shape, ivtbl->ivptr, func, arg);
 }
 
 void
@@ -1994,40 +1954,52 @@ check_id_type(VALUE obj, VALUE *pname,
 VALUE
 rb_obj_remove_instance_variable(VALUE obj, VALUE name)
 {
+    rb_check_frozen(obj);
+
     VALUE val = Qnil;
     const ID id = id_for_var(obj, name, an, instance);
-    st_data_t n, v;
     attr_index_t index;
 
-    rb_check_frozen(obj);
     if (!id) {
         goto not_defined;
     }
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        if (iv_index_tbl_lookup(obj, id, &index) &&
-            index < ROBJECT_NUMIV(obj) &&
-            (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
-            ROBJECT_IVPTR(obj)[index] = Qundef;
-            return val;
-        }
-        break;
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-        n = id;
-        if (RCLASS_IV_TBL(obj) && lock_st_delete(RCLASS_IV_TBL(obj), &n, &v)) {
-            return (VALUE)v;
-        }
-        break;
-      default:
-        if (FL_TEST(obj, FL_EXIVAR)) {
-            if (generic_ivar_remove(obj, id, &val)) {
-                return val;
+        if (RCLASS_IV_TBL(obj)) {
+            st_data_t id_data = (st_data_t)id, val;
+            if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
+                return (VALUE)val;
             }
         }
         break;
+      case T_OBJECT: {
+        rb_shape_t * shape = rb_shape_get_shape(obj);
+        if (rb_shape_get_iv_index(shape, id, &index)) {
+            rb_shape_transition_shape_remove_ivar(obj, id, shape);
+            val = ROBJECT_IVPTR(obj)[index];
+            ROBJECT_IVPTR(obj)[index] = Qundef;
+            return val;
+        }
+
+        break;
+      }
+      default: {
+        rb_shape_t * shape = rb_shape_get_shape(obj);
+
+        if (rb_shape_get_iv_index(shape, id, &index)) {
+            rb_shape_transition_shape_remove_ivar(obj, id, shape);
+            struct gen_ivtbl *ivtbl;
+            rb_gen_ivtbl_get(obj, id, &ivtbl);
+            val = ivtbl->ivptr[index];
+            ivtbl->ivptr[index] = Qundef;
+            return val;
+        }
+
+        break;
+      }
     }
 
   not_defined:
