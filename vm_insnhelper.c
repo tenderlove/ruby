@@ -1217,12 +1217,10 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             if (is_attr) {
                 if (vm_cc_markable(cc)) {
                     vm_cc_attr_index_initialize(cc, shape_id);
-                    RB_OBJ_WRITTEN(cc, Qundef, shape);
                 }
             }
             else {
                 vm_ic_attr_index_initialize(ic, shape_id);
-                RB_OBJ_WRITTEN(iseq, Qundef, shape);
             }
         }
 
