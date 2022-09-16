@@ -1197,12 +1197,11 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             goto general_path;
         }
 
-        VALUE iv_index_value;
+        attr_index_t index;
         rb_shape_t *shape = rb_shape_get_shape(obj);
-        if (rb_shape_get_iv_index(shape, id, &iv_index_value)) {
+        if (rb_shape_get_iv_index(shape, id, &index)) {
             // This fills in the cache with the shared cache object.
             // "ent" is the shared cache object
-            index = (attr_index_t)iv_index_value;
             fill_ivar_cache(iseq, ic, cc, is_attr, index, shape_id);
 
             // get value
@@ -1295,9 +1294,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                     rb_shape_set_shape(obj, next_shape);
                 }
 
-                VALUE x;
-                if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the hash stored in the transition tree
-                    index = (attr_index_t)x;
+                if (rb_shape_get_iv_index(next_shape, id, &index)) { // based off the hash stored in the transition tree
                     if (index >= INT_MAX) {
                         rb_raise(rb_eArgError, "too many instance variables");
                     }
@@ -1327,11 +1324,9 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 rb_shape_t * shape = rb_shape_get_shape(obj);
                 rb_ivar_set(obj, id, val);
                 rb_shape_t * next_shape = rb_shape_get_shape(obj);
-                VALUE x;
                 attr_index_t index;
 
-                if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the hash stored in the transition tree
-                    index = (attr_index_t)x;
+                if (rb_shape_get_iv_index(next_shape, id, &index)) { // based off the hash stored in the transition tree
                     if (index >= INT_MAX) {
                         rb_raise(rb_eArgError, "too many instance variables");
                     }

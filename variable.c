@@ -898,7 +898,7 @@ rb_alias_variable(ID name1, ID name2)
 static bool
 iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
-    st_data_t ent_data;
+    attr_index_t ent_data;
     rb_shape_t* shape = rb_shape_get_shape(obj);
 
     int r = rb_shape_get_iv_index(shape, id, &ent_data);
@@ -1392,7 +1392,7 @@ static void
 iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
 {
     ASSERT_vm_locking();
-    VALUE ent_data;
+    attr_index_t ent_data;
 
     int r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
 
@@ -1554,7 +1554,7 @@ rb_init_iv_list(VALUE obj)
 // @note May raise when there are too many instance variables.
 // @note YJIT uses this function at compile time to simplify the work needed to
 //       access the variable at runtime.
-attr_index_t
+uint32_t
 rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
@@ -1566,11 +1566,7 @@ rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
     // Get the current shape
     rb_shape_t * shape = rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj));
 
-    VALUE x;
-    if (rb_shape_get_iv_index(shape, id, &x)) {
-        index = (attr_index_t)x;
-    }
-    else {
+    if (!rb_shape_get_iv_index(shape, id, &index)) {
         rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(id));
     }
 

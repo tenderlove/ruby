@@ -264,8 +264,8 @@ rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
     return get_next_shape_internal(shape, id, obj, SHAPE_IVAR);
 }
 
-int
-rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE *value) {
+bool
+rb_shape_get_iv_index(rb_shape_t * shape, ID id, uint32_t *value) {
     while (shape->parent) {
         if (shape->edge_name == id) {
             *value = shape->iv_count - 1;

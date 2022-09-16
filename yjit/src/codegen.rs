@@ -2020,11 +2020,16 @@ fn gen_get_ivar(
         return EndBlock;
     }
 
-    // FIXME: Mapping the index could fail when there is too many ivar names. If we're
-    // compiling for a branch stub that can cause the exception to be thrown from the
-    // wrong PC.
-    let ivar_index =
-        unsafe { rb_obj_ensure_iv_index_mapping(comptime_receiver, ivar_name) }.as_usize();
+    let ivar_index = unsafe {
+        let shape_id = comptime_receiver.shape_of();
+        let shape = rb_shape_get_shape_by_id(shape_id);
+        let mut ivar_index: u32 = 0;
+        if rb_shape_get_iv_index(shape, ivar_name, &mut ivar_index) {
+            Some(ivar_index as usize)
+        } else {
+            None
+        }
+    };
 
     // must be before stack_pop
     let recv_type = ctx.get_opnd_type(recv_opnd);
@@ -2042,14 +2047,6 @@ fn gen_get_ivar(
     // Guard heap object
     if !recv_type.is_heap() {
         guard_object_is_heap(asm, recv, side_exit);
-    }
-
-    if USE_RVARGC != 0 {
-        // Check that the ivar table is big enough
-        // Check that the slot is inside the ivar table (num_slots > index)
-        let num_slots = Opnd::mem(32, recv, ROBJECT_OFFSET_NUMIV);
-        asm.cmp(num_slots, Opnd::UImm(ivar_index as u64));
-        asm.jbe(counted_exit!(ocb, side_exit, getivar_idx_out_of_range).into());
     }
 
     // Compile time self is embedded and the ivar index lands within the object
@@ -2075,11 +2072,17 @@ fn gen_get_ivar(
         side_exit,
     );
 
-    if embed_test_result {
+    // If there is no IVAR index, then the ivar was undefined
+    // when we entered the compiler.  That means we can just return
+    // nil for this shape + iv name
+    if ivar_index.is_none() {
+        let out_opnd = ctx.stack_push(Type::Nil);
+        asm.mov(out_opnd, Qnil.into());
+    } else if embed_test_result {
         // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
 
         // Load the variable
-        let offs = ROBJECT_OFFSET_AS_ARY + (ivar_index * SIZEOF_VALUE) as i32;
+        let offs = ROBJECT_OFFSET_AS_ARY + (ivar_index.unwrap() * SIZEOF_VALUE) as i32;
         let ivar_opnd = Opnd::mem(64, recv, offs);
 
         // Guard that the variable is not Qundef
@@ -2096,7 +2099,7 @@ fn gen_get_ivar(
             // Check that the extended table is big enough
             // Check that the slot is inside the extended table (num_slots > index)
             let num_slots = Opnd::mem(32, recv, ROBJECT_OFFSET_NUMIV);
-            asm.cmp(num_slots, Opnd::UImm(ivar_index as u64));
+            asm.cmp(num_slots, Opnd::UImm(ivar_index.unwrap() as u64));
             asm.jbe(counted_exit!(ocb, side_exit, getivar_idx_out_of_range).into());
         }
 
@@ -2104,8 +2107,11 @@ fn gen_get_ivar(
         let tbl_opnd = asm.load(Opnd::mem(64, recv, ROBJECT_OFFSET_AS_HEAP_IVPTR));
 
         // Read the ivar from the extended table
-        let ivar_opnd = Opnd::mem(64, tbl_opnd, (SIZEOF_VALUE * ivar_index) as i32);
+        let ivar_opnd = Opnd::mem(64, tbl_opnd, (SIZEOF_VALUE * ivar_index.unwrap()) as i32);
 
+        // Do we have a shape transition for this id?
+        // If not, return Qnil
+        // Else do other
         // Check that the ivar is not Qundef
         asm.cmp(ivar_opnd, Qundef.into());
         let out_val = asm.csel_ne(ivar_opnd, Qnil.into());
