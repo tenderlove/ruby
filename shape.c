@@ -4,6 +4,7 @@
 #include "internal/class.h"
 #include "internal/symbol.h"
 #include "internal/variable.h"
+#include <stdbool.h>
 
 /*
  * Shape getters
@@ -265,7 +266,7 @@ rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
 }
 
 bool
-rb_shape_get_iv_index(rb_shape_t * shape, ID id, uint32_t *value) {
+rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value) {
     while (shape->parent) {
         if (shape->edge_name == id) {
             *value = shape->iv_count - 1;

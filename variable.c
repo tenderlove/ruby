@@ -896,7 +896,7 @@ rb_alias_variable(ID name1, ID name2)
 }
 
 static bool
-iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
+iv_index_tbl_lookup(VALUE obj, ID id, attr_index_t *indexp)
 {
     attr_index_t ent_data;
     rb_shape_t* shape = rb_shape_get_shape(obj);
@@ -904,7 +904,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
     int r = rb_shape_get_iv_index(shape, id, &ent_data);
 
     if (r) {
-        *indexp = (uint32_t)ent_data;
+        *indexp = ent_data;
     }
 
     return r;
@@ -989,7 +989,7 @@ generic_ivar_delete(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
-        uint32_t index;
+        attr_index_t index;
 
         if (iv_index_tbl_lookup(obj, id, &index)) {
             if (index < ivtbl->numiv) {
@@ -1009,7 +1009,7 @@ generic_ivar_get(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
-        uint32_t index;
+        attr_index_t index;
 
 	if (iv_index_tbl_lookup(obj, id, &index)) {
 	    if (index < ivtbl->numiv) {
@@ -1098,7 +1098,7 @@ static VALUE
 generic_ivar_defined(VALUE obj, ID id)
 {
     struct gen_ivtbl *ivtbl;
-    uint32_t index;
+    attr_index_t index;
 
     if (!iv_index_tbl_lookup(obj, id, &index)) return Qfalse;
     if (!rb_gen_ivtbl_get(obj, id, &ivtbl)) return Qfalse;
@@ -1110,7 +1110,7 @@ static int
 generic_ivar_remove(VALUE obj, ID id, VALUE *valp)
 {
     struct gen_ivtbl *ivtbl;
-    uint32_t index;
+    attr_index_t index;
 
     if (!iv_index_tbl_lookup(obj, id, &index)) return 0;
     if (!rb_gen_ivtbl_get(obj, id, &ivtbl)) return 0;
@@ -1272,7 +1272,7 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
         {
-            uint32_t index;
+            attr_index_t index;
             uint32_t len = ROBJECT_NUMIV(obj);
             VALUE *ptr = ROBJECT_IVPTR(obj);
             VALUE val;
@@ -1331,7 +1331,8 @@ static VALUE
 rb_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
     VALUE *ptr;
-    uint32_t len, index;
+    uint32_t len;
+    attr_index_t index;
 
     rb_check_frozen(obj);
     switch (BUILTIN_TYPE(obj)) {
@@ -1701,7 +1702,7 @@ VALUE
 rb_ivar_defined(VALUE obj, ID id)
 {
     VALUE val;
-    uint32_t index;
+    attr_index_t index;
 
     if (SPECIAL_CONST_P(obj)) return Qfalse;
     switch (BUILTIN_TYPE(obj)) {
@@ -1996,7 +1997,7 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
     VALUE val = Qnil;
     const ID id = id_for_var(obj, name, an, instance);
     st_data_t n, v;
-    uint32_t index;
+    attr_index_t index;
 
     rb_check_frozen(obj);
     if (!id) {

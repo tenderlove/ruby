@@ -501,7 +501,7 @@ vm_ic_attr_index_initialize(const struct iseq_inline_iv_cache_entry *ic, shape_i
 {
     *(shape_id_t *)&ic->source_shape_id = shape_id;
     *(shape_id_t *)&ic->dest_shape_id = shape_id;
-    *(uint32_t *)&ic->attr_index = 0;
+    *(attr_index_t *)&ic->attr_index = 0;
 }
 
 static inline void

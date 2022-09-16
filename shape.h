@@ -128,7 +128,7 @@ int rb_shape_frozen_shape_p(rb_shape_t* shape);
 void rb_shape_transition_shape_frozen(VALUE obj);
 void rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape);
 rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
-bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, uint32_t * value);
+bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);
 MJIT_SYMBOL_EXPORT_END
 
 rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent);
