@@ -50,7 +50,11 @@ MJIT_STATIC VALUE
 ruby_vm_special_exception_copy(VALUE exc)
 {
     VALUE e = rb_obj_alloc(rb_class_real(RBASIC_CLASS(exc)));
-    rb_shape_set_shape(e, rb_shape_get_shape(exc));
+    rb_shape_t * shape = rb_shape_get_shape(exc);
+    if (rb_shape_frozen_shape_p(shape)) {
+        shape = shape->parent;
+    }
+    rb_shape_set_shape(e, shape);
     rb_obj_copy_ivar(e, exc);
     return e;
 }
