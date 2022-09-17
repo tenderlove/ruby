@@ -2085,13 +2085,9 @@ fn gen_get_ivar(
         let offs = ROBJECT_OFFSET_AS_ARY + (ivar_index.unwrap() * SIZEOF_VALUE) as i32;
         let ivar_opnd = Opnd::mem(64, recv, offs);
 
-        // Guard that the variable is not Qundef
-        asm.cmp(ivar_opnd, Qundef.into());
-        let out_val = asm.csel_e(Qnil.into(), ivar_opnd);
-
         // Push the ivar on the stack
         let out_opnd = ctx.stack_push(Type::Unknown);
-        asm.mov(out_opnd, out_val);
+        asm.mov(out_opnd, ivar_opnd);
     } else {
         // Compile time value is *not* embedded.
 
@@ -2109,16 +2105,8 @@ fn gen_get_ivar(
         // Read the ivar from the extended table
         let ivar_opnd = Opnd::mem(64, tbl_opnd, (SIZEOF_VALUE * ivar_index.unwrap()) as i32);
 
-        // Do we have a shape transition for this id?
-        // If not, return Qnil
-        // Else do other
-        // Check that the ivar is not Qundef
-        asm.cmp(ivar_opnd, Qundef.into());
-        let out_val = asm.csel_ne(ivar_opnd, Qnil.into());
-
-        // Push the ivar on the stack
         let out_opnd = ctx.stack_push(Type::Unknown);
-        asm.mov(out_opnd, out_val);
+        asm.mov(out_opnd, ivar_opnd);
     }
 
     // Jump to next instruction. This allows guard chains to share the same successor.
