@@ -197,6 +197,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                             }
                             break;
                         case SHAPE_IVAR_UNDEF:
+                            new_shape->iv_count = new_shape->parent->iv_count;
                             break;
                         case SHAPE_ROOT:
                             rb_bug("Unreachable");
@@ -465,6 +466,29 @@ rb_shape_edges(VALUE self)
 }
 
 static VALUE
+rb_shape_edge_name(VALUE self)
+{
+    rb_shape_t* shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+
+    if (shape->edge_name) {
+        return ID2SYM(shape->edge_name);
+    }
+    else {
+        return Qnil;
+    }
+}
+
+static VALUE
+rb_shape_iv_count(VALUE self)
+{
+    rb_shape_t* shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+
+    return INT2NUM(shape->iv_count);
+}
+
+static VALUE
 rb_shape_export_depth(VALUE self)
 {
     rb_shape_t* shape;
@@ -483,7 +507,12 @@ rb_shape_parent(VALUE self)
 {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return rb_shape_t_to_rb_cShape(shape->parent);
+    if (shape->parent) {
+        return rb_shape_t_to_rb_cShape(shape->parent);
+    }
+    else {
+        return Qnil;
+    }
 }
 
 VALUE rb_shape_debug_shape(VALUE self, VALUE obj) {
@@ -567,6 +596,8 @@ Init_shape(void)
     rb_define_method(rb_cShape, "parent_id", rb_shape_parent_id, 0);
     rb_define_method(rb_cShape, "parent", rb_shape_parent, 0);
     rb_define_method(rb_cShape, "edges", rb_shape_edges, 0);
+    rb_define_method(rb_cShape, "edge_name", rb_shape_edge_name, 0);
+    rb_define_method(rb_cShape, "iv_count", rb_shape_iv_count, 0);
     rb_define_method(rb_cShape, "depth", rb_shape_export_depth, 0);
     rb_define_method(rb_cShape, "id", rb_shape_id, 0);
     rb_define_method(rb_cShape, "type", rb_shape_type, 0);

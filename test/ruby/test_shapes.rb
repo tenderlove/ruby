@@ -9,6 +9,20 @@ class TestShapes < Test::Unit::TestCase
     end
   end
 
+  class RemoveAndAdd
+    def add_foo
+      @foo = 1
+    end
+
+    def remove
+      remove_instance_variable(:@foo)
+    end
+
+    def add_bar
+      @bar = 1
+    end
+  end
+
   # RubyVM.debug_shape returns new instances of shape objects for
   # each call. This helper method allows us to define equality for
   # shapes
@@ -20,6 +34,30 @@ class TestShapes < Test::Unit::TestCase
 
   def refute_shape_equal(shape1, shape2)
     refute_equal(shape1.id, shape2.id)
+  end
+
+  def test_iv_index
+    example = RemoveAndAdd.new
+    shape = RubyVM.debug_shape(example)
+    assert_equal 0, shape.iv_count
+
+    example.add_foo # makes a transition
+    new_shape = RubyVM.debug_shape(example)
+    assert_equal([:@foo], example.instance_variables)
+    assert_equal(shape.id, new_shape.parent.id)
+    assert_equal(1, new_shape.iv_count)
+
+    example.remove # makes a transition
+    remove_shape = RubyVM.debug_shape(example)
+    assert_equal([], example.instance_variables)
+    assert_equal(new_shape.id, remove_shape.parent.id)
+    assert_equal(1, remove_shape.iv_count)
+
+    example.add_bar # makes a transition
+    bar_shape = RubyVM.debug_shape(example)
+    assert_equal([:@bar], example.instance_variables)
+    assert_equal(remove_shape.id, bar_shape.parent.id)
+    assert_equal(2, bar_shape.iv_count)
   end
 
   def test_new_obj_has_root_shape
