@@ -1176,8 +1176,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
         val = ivar_list[index];
         VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
-
-        goto ret;
     }
     else { // cache miss case
 #if RUBY_DEBUG
@@ -1217,16 +1215,15 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             else {
                 vm_ic_attr_index_initialize(ic, shape_id);
             }
+
+            val = Qnil;
         }
 
-ret:
-        if (LIKELY(val != Qundef)) {
-            return val;
-        }
-        else {
-            return Qnil;
-        }
     }
+
+    RUBY_ASSERT(val != Qundef);
+
+    return val;
 
 general_path:
 #endif /* OPT_IC_FOR_IVAR */
@@ -1239,11 +1236,6 @@ general_path:
         return rb_ivar_get(obj, id);
     }
 }
-
-struct check_shape {
-    rb_shape_t *shape;
-    bool found;
-};
 
 static void
 populate_cache(attr_index_t index, rb_shape_t *shape, rb_shape_t *next_shape, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, bool is_attr)
