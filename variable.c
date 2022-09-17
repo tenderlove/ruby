@@ -983,25 +983,6 @@ rb_ivar_generic_ivtbl_lookup(VALUE obj, struct gen_ivtbl **ivtbl)
     return rb_gen_ivtbl_get(obj, 0, ivtbl);
 }
 
-static VALUE
-generic_ivar_get(VALUE obj, ID id, VALUE undef)
-{
-    struct gen_ivtbl *ivtbl;
-
-    if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
-        attr_index_t index;
-
-	if (iv_index_tbl_lookup(obj, id, &index)) {
-	    if (index < ivtbl->numiv) {
-		VALUE ret = ivtbl->ivptr[index];
-
-                return ret == Qundef ? undef : ret;
-            }
-        }
-    }
-    return undef;
-}
-
 static size_t
 gen_ivtbl_bytes(size_t n)
 {
@@ -1230,23 +1211,16 @@ VALUE
 rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
 {
     if (SPECIAL_CONST_P(obj)) return undef;
-    switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        {
-            attr_index_t index;
-            uint32_t len = ROBJECT_NUMIV(obj);
-            VALUE *ptr = ROBJECT_IVPTR(obj);
-            VALUE val;
 
-            if (iv_index_tbl_lookup(obj, id, &index) &&
-                index < len &&
-                (val = ptr[index]) != Qundef) {
-                return val;
-            }
-            else {
-                break;
-            }
-        }
+    shape_id_t shape_id;
+    VALUE * ivar_list;
+    rb_shape_t * shape;
+
+#if SHAPE_IN_BASIC_FLAGS
+    shape_id = RBASIC_SHAPE_ID(obj);
+#endif
+
+    switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
       case T_MODULE:
         {
@@ -1263,14 +1237,37 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
                 return val;
             }
             else {
-                break;
+                return undef;
             }
         }
+      case T_OBJECT:
+        {
+#if !SHAPE_IN_BASIC_FLAGS
+            shape_id = ROBJECT_SHAPE_ID(obj);
+#endif
+            ivar_list = ROBJECT_IVPTR(obj);
+            break;
+        }
       default:
-        if (FL_TEST(obj, FL_EXIVAR))
-            return generic_ivar_get(obj, id, undef);
+        if (FL_TEST_RAW(obj, FL_EXIVAR)) {
+            struct gen_ivtbl *ivtbl;
+            rb_gen_ivtbl_get(obj, id, &ivtbl);
+#if !SHAPE_IN_BASIC_FLAGS
+            shape_id = ivtbl->shape_id;
+#endif
+            ivar_list = ivtbl->ivptr;
+        } else {
+            return undef;
+        }
         break;
     }
+
+    attr_index_t index = 0;
+    shape = rb_shape_get_shape_by_id(shape_id);
+    if (rb_shape_get_iv_index(shape, id, &index)) {
+        return ivar_list[index];
+    }
+
     return undef;
 }
 
