@@ -721,12 +721,12 @@ w_ivar_each(VALUE obj, st_index_t num, struct dump_call_arg *arg)
     struct w_ivar_arg ivarg = {arg, num};
     if (!num) return;
     rb_ivar_foreach(obj, w_obj_each, (st_data_t)&ivarg);
-    if (shape_id != rb_shape_get_shape_id(arg->obj)) {
-        rb_raise(rb_eRuntimeError, "instance variable added to %"PRIsVALUE" instance",
-                 CLASS_OF(arg->obj));
-    }
     if (ivarg.num_ivar) {
         rb_raise(rb_eRuntimeError, "instance variable removed from %"PRIsVALUE" instance",
+                 CLASS_OF(arg->obj));
+    }
+    if (shape_id != rb_shape_get_shape_id(arg->obj)) {
+        rb_raise(rb_eRuntimeError, "instance variable added to %"PRIsVALUE" instance",
                  CLASS_OF(arg->obj));
     }
 }
