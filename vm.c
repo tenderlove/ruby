@@ -4077,6 +4077,7 @@ Init_vm_objects(void)
     vm->frozen_root_shape = rb_shape_alloc(FROZEN_ROOT_SHAPE_ID,
             rb_make_internal_id(),
             vm->root_shape);
+    vm->frozen_root_shape->type = (uint8_t)SHAPE_FROZEN;
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
     rb_shape_set_shape_by_id(FROZEN_ROOT_SHAPE_ID, vm->frozen_root_shape);
     RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);

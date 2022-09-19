@@ -302,7 +302,7 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
 }
 
 static void
-init_copy(VALUE dest, VALUE obj, bool preserve_frozen)
+init_copy(VALUE dest, VALUE obj)
 {
     if (OBJ_FROZEN(dest)) {
         rb_raise(rb_eTypeError, "[bug] frozen object (%s) allocated", rb_obj_classname(dest));
@@ -318,7 +318,7 @@ init_copy(VALUE dest, VALUE obj, bool preserve_frozen)
 
     // If the object is frozen, the "dup"'d object will *not* be frozen,
     // so we need to copy the frozen shape's parent to the new object.
-    if (!preserve_frozen && RB_OBJ_FROZEN((VALUE)shape_to_set)) {
+    if (rb_shape_frozen_shape_p(shape_to_set)) {
         shape_to_set = shape_to_set->parent;
     }
 
@@ -424,12 +424,13 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
         rb_singleton_class_attached(singleton, clone);
     }
 
-    init_copy(clone, obj, true);
+    init_copy(clone, obj);
 
     switch (kwfreeze) {
       case Qnil:
         rb_funcall(clone, id_init_clone, 1, obj);
         RBASIC(clone)->flags |= RBASIC(obj)->flags & FL_FREEZE;
+        rb_shape_transition_shape_frozen(obj);
         break;
       case Qtrue:
         {
@@ -445,6 +446,7 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
         argv[1] = freeze_true_hash;
         rb_funcallv_kw(clone, id_init_clone, 2, argv, RB_PASS_KEYWORDS);
         RBASIC(clone)->flags |= FL_FREEZE;
+        rb_shape_transition_shape_frozen(obj);
         break;
         }
       case Qfalse:
@@ -524,7 +526,7 @@ rb_obj_dup(VALUE obj)
         return obj;
     }
     dup = rb_obj_alloc(rb_obj_class(obj));
-    init_copy(dup, obj, false);
+    init_copy(dup, obj);
     rb_funcall(dup, id_init_dup, 1, obj);
 
     return dup;
