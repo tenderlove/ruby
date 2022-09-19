@@ -67,7 +67,6 @@ struct ivar_update {
     struct gen_ivtbl *ivtbl;
     uint32_t iv_index;
     rb_shape_t* shape;
-    int iv_extended;
 };
 
 void
@@ -1004,10 +1003,10 @@ gen_ivtbl_dup(const struct gen_ivtbl *orig)
 #endif
 
 static uint32_t
-iv_index_tbl_newsize(struct ivar_update *ivup)
+iv_index_tbl_newsize(rb_shape_t * shape, bool iv_extended)
 {
-    uint32_t index = (uint32_t)ivup->shape->iv_count;	/* should not overflow */
-    if (ivup->iv_extended) {
+    attr_index_t index = (attr_index_t)shape->iv_count;	/* should not overflow */
+    if (iv_extended) {
         return (index+1) + (index+1)/4; /* (index+1)*1.25 */
     }
     return index;
@@ -1029,7 +1028,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
         }
     }
     FL_SET((VALUE)*k, FL_EXIVAR);
-    uint32_t newsize = iv_index_tbl_newsize(ivup);
+    uint32_t newsize = iv_index_tbl_newsize(ivup->shape, 0);
     ivtbl = gen_ivtbl_resize(ivtbl, newsize);
     // Reinsert in to the hash table because ivtbl might be a newly resized chunk of memory
     *v = (st_data_t)ivtbl;
@@ -1038,11 +1037,6 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     ivtbl->shape_id = SHAPE_ID(ivup->shape);
 #endif
     return ST_CONTINUE;
-}
-
-static VALUE
-generic_ivar_defined(VALUE obj, ID id)
-{
 }
 
 static void
@@ -1319,34 +1313,23 @@ rb_attr_delete(VALUE obj, ID id)
 }
 
 static void
-iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
-{
-    ASSERT_vm_locking();
-    attr_index_t ent_data;
-
-    int r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
-
-    if (r) {
-        ivup->iv_index = (uint32_t) ent_data;
-        ivup->iv_extended = 1;
-    }
-    else {
-        rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(id));
-    }
-}
-
-static void
 generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
     // The returned shape will have `id` in its iv_table
     rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), obj, id);
     ivup.shape = shape;
-    ivup.iv_extended = 0;
 
     RB_VM_LOCK_ENTER();
     {
-        iv_index_tbl_extend(obj, &ivup, id);
+        attr_index_t ent_data;
+        if (rb_shape_get_iv_index(shape, id, &ent_data)) {
+            ivup.iv_index = (uint32_t) ent_data;
+        }
+        else {
+            rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(id));
+        }
+
         if (!st_update(generic_ivtbl(obj, id, false), (st_data_t)obj, generic_ivar_update,
                   (st_data_t)&ivup)) {
             RB_OBJ_WRITTEN(obj, Qundef, shape);
@@ -1502,10 +1485,7 @@ rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 
     uint32_t len = ROBJECT_NUMIV(obj);
     if (len <= index) {
-        struct ivar_update ivup;
-        ivup.shape = shape;
-        ivup.iv_extended = 1;
-        uint32_t newsize = iv_index_tbl_newsize(&ivup);
+        uint32_t newsize = iv_index_tbl_newsize(shape, 1);
         rb_ensure_iv_list_size(obj, len, newsize);
     }
     RUBY_ASSERT(index <= ROBJECT_NUMIV(obj));
