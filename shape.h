@@ -55,7 +55,7 @@ struct rb_shape {
 
 typedef struct rb_shape rb_shape_t;
 
-enum transition_type {
+enum shape_type {
     SHAPE_ROOT,
     SHAPE_IVAR,
     SHAPE_FROZEN,

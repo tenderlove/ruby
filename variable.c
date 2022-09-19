@@ -1667,7 +1667,7 @@ st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 static void
 iterate_over_shapes_with_callback(rb_shape_t *shape, VALUE* iv_list, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
-    switch ((enum transition_type)shape->type) {
+    switch ((enum shape_type)shape->type) {
         case SHAPE_ROOT:
             return;
         case SHAPE_IVAR:

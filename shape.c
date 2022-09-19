@@ -125,12 +125,12 @@ get_next_shape_id(void)
 }
 
 static rb_shape_t *
-rb_shape_lookup_id(rb_shape_t* shape, ID id, enum transition_type tt) {
+rb_shape_lookup_id(rb_shape_t* shape, ID id, enum shape_type shape_type) {
     while (shape->parent) {
         if (shape->edge_name == id) {
-            // If the transition type is different, we don't
+            // If the shape type is different, we don't
             // want this to count as a "found" ID
-            if (tt == (enum transition_type)shape->type) {
+            if (shape_type == (enum shape_type)shape->type) {
                 return shape;
             }
             else {
@@ -143,13 +143,13 @@ rb_shape_lookup_id(rb_shape_t* shape, ID id, enum transition_type tt) {
 }
 
 static rb_shape_t*
-get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_type tt)
+get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum shape_type shape_type)
 {
     rb_shape_t *res = NULL;
-    RUBY_ASSERT(SHAPE_FROZEN != (enum transition_type)shape->type);
+    RUBY_ASSERT(SHAPE_FROZEN != (enum shape_type)shape->type);
     RB_VM_LOCK_ENTER();
     {
-        if (rb_shape_lookup_id(shape, id, tt)) {
+        if (rb_shape_lookup_id(shape, id, shape_type)) {
             // If shape already contains the ivar that is being set, we'll return shape
             res = shape;
         }
@@ -179,9 +179,9 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                             id,
                             shape);
 
-                    new_shape->type = (uint8_t)tt;
+                    new_shape->type = (uint8_t)shape_type;
 
-                    switch(tt) {
+                    switch(shape_type) {
                         case SHAPE_FROZEN:
                             RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                             break;
@@ -220,7 +220,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
 MJIT_FUNC_EXPORTED int
 rb_shape_frozen_shape_p(rb_shape_t* shape)
 {
-    return SHAPE_FROZEN == (enum transition_type)shape->type;
+    return SHAPE_FROZEN == (enum shape_type)shape->type;
 }
 
 void
@@ -295,8 +295,8 @@ bool
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value) {
     while (shape->parent) {
         if (shape->edge_name == id) {
-            enum transition_type shape_type;
-            shape_type = (enum transition_type)shape->type;
+            enum shape_type shape_type;
+            shape_type = (enum shape_type)shape->type;
 
             switch(shape_type) {
                 case SHAPE_IVAR:
