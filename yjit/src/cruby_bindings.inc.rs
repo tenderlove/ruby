@@ -269,6 +269,7 @@ extern "C" {
 extern "C" {
     pub fn rb_reg_new_ary(ary: VALUE, options: ::std::os::raw::c_int) -> VALUE;
 }
+pub type attr_index_t = u32;
 pub type shape_id_t = u32;
 #[repr(C)]
 pub struct rb_shape {
@@ -276,10 +277,10 @@ pub struct rb_shape {
     pub parent: *mut rb_shape,
     pub edges: *mut rb_id_table,
     pub edge_name: ID,
-    pub iv_count: u32,
+    pub iv_count: attr_index_t,
+    pub type_: u8,
 }
 pub type rb_shape_t = rb_shape;
-pub type attr_index_t = u32;
 extern "C" {
     pub fn rb_shape_get_shape_by_id(shape_id: shape_id_t) -> *mut rb_shape_t;
 }
@@ -287,7 +288,7 @@ extern "C" {
     pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
 }
 extern "C" {
-    pub fn rb_shape_get_iv_index(shape: *mut rb_shape_t, id: ID, value: *mut u32) -> bool;
+    pub fn rb_shape_get_iv_index(shape: *mut rb_shape_t, id: ID, value: *mut attr_index_t) -> bool;
 }
 extern "C" {
     pub fn rb_shape_flags_mask() -> VALUE;
