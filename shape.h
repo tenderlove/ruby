@@ -10,6 +10,8 @@ typedef uint32_t attr_index_t;
 typedef uint16_t attr_index_t;
 #endif
 
+#define MAX_IVARS ((1 << (sizeof(attr_index_t) * 8)) - 1)
+
 #if RUBY_DEBUG || (defined(VM_CHECK_MODE) && VM_CHECK_MODE > 0)
 #  if SIZEOF_SHAPE_T == 4
 typedef uint32_t shape_id_t;

@@ -1278,7 +1278,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 }
 
                 if (rb_shape_get_iv_index(next_shape, id, &index)) { // based off the hash stored in the transition tree
-                    if (index >= INT_MAX) {
+                    if (index >= MAX_IVARS) {
                         rb_raise(rb_eArgError, "too many instance variables");
                     }
 
@@ -1310,7 +1310,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 attr_index_t index;
 
                 if (rb_shape_get_iv_index(next_shape, id, &index)) { // based off the hash stored in the transition tree
-                    if (index >= INT_MAX) {
+                    if (index >= MAX_IVARS) {
                         rb_raise(rb_eArgError, "too many instance variables");
                     }
 
