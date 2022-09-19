@@ -895,21 +895,6 @@ rb_alias_variable(ID name1, ID name2)
     entry1->var = entry2->var;
 }
 
-static bool
-iv_index_tbl_lookup(VALUE obj, ID id, attr_index_t *indexp)
-{
-    attr_index_t ent_data;
-    rb_shape_t* shape = rb_shape_get_shape(obj);
-
-    int r = rb_shape_get_iv_index(shape, id, &ent_data);
-
-    if (r) {
-        *indexp = ent_data;
-    }
-
-    return r;
-}
-
 static void
 IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(ID id)
 {
@@ -1058,13 +1043,6 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
 static VALUE
 generic_ivar_defined(VALUE obj, ID id)
 {
-    struct gen_ivtbl *ivtbl;
-    attr_index_t index;
-
-    if (!iv_index_tbl_lookup(obj, id, &index)) return Qfalse;
-    if (!rb_gen_ivtbl_get(obj, id, &ivtbl)) return Qfalse;
-
-    return RBOOL((index < ivtbl->numiv) && (ivtbl->ivptr[index] != Qundef));
 }
 
 static void
@@ -1667,29 +1645,21 @@ rb_ivar_set_internal(VALUE obj, ID id, VALUE val)
 VALUE
 rb_ivar_defined(VALUE obj, ID id)
 {
-    VALUE val;
     attr_index_t index;
 
     if (SPECIAL_CONST_P(obj)) return Qfalse;
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        if (iv_index_tbl_lookup(obj, id, &index) &&
-            index < ROBJECT_NUMIV(obj) &&
-            (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
-            return Qtrue;
-        }
-        break;
       case T_CLASS:
       case T_MODULE:
-        if (RCLASS_IV_TBL(obj) && lock_st_is_member(RCLASS_IV_TBL(obj), (st_data_t)id))
+        if (RCLASS_IV_TBL(obj) && lock_st_is_member(RCLASS_IV_TBL(obj), (st_data_t)id)) {
             return Qtrue;
-        break;
+        }
+        else {
+            return Qfalse;
+        }
       default:
-        if (FL_TEST(obj, FL_EXIVAR))
-            return generic_ivar_defined(obj, id);
-        break;
+        return RBOOL(rb_shape_get_iv_index(rb_shape_get_shape(obj), id, &index));
     }
-    return Qfalse;
 }
 
 typedef int rb_ivar_foreach_callback_func(ID key, VALUE val, st_data_t arg);

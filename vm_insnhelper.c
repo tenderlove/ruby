@@ -1116,7 +1116,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
     VALUE * ivar_list;
 
     if (SPECIAL_CONST_P(obj)) {
-        goto general_path;
+        return Qnil;
     }
 
 #if SHAPE_IN_BASIC_FLAGS
