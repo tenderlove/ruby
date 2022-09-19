@@ -241,6 +241,7 @@ rb_shape_transition_shape_frozen(VALUE obj)
 {
     rb_shape_t* shape = rb_shape_get_shape(obj);
     RUBY_ASSERT(shape);
+    RUBY_ASSERT(RB_OBJ_FROZEN(obj));
 
     if (rb_shape_frozen_shape_p(shape)) {
         return;
@@ -343,6 +344,8 @@ MJIT_FUNC_EXPORTED void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
+    RUBY_ASSERT(SHAPE_FROZEN == shape->type ? RB_OBJ_FROZEN(obj) : 1);
+
     if(rb_shape_set_shape_id(obj, SHAPE_ID(shape))) {
         if (shape != rb_shape_get_frozen_root_shape()) {
             RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
