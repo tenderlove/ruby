@@ -19,7 +19,9 @@ gnumake_recursive =
 enable_shared = $(ENABLE_SHARED:no=)
 
 UNICODE_VERSION = 14.0.0
-UNICODE_EMOJI_VERSION = 14.0
+UNICODE_EMOJI_VERSION_0 = $(UNICODE_VERSION)///
+UNICODE_EMOJI_VERSION_1 = $(UNICODE_EMOJI_VERSION_0:.0///=)
+UNICODE_EMOJI_VERSION = $(UNICODE_EMOJI_VERSION_1:///=)
 UNICODE_BETA = NO
 
 ### set the following environment variable or uncomment the line if
@@ -223,6 +225,12 @@ all: $(SHOWFLAGS) main docs
 
 main: $(SHOWFLAGS) exts $(ENCSTATIC:static=lib)encs
 	@$(NULLCMD)
+
+main: $(srcdir)/lib/mjit/instruction.rb
+srcs: $(srcdir)/lib/mjit/instruction.rb
+$(srcdir)/lib/mjit/instruction.rb: $(tooldir)/ruby_vm/views/lib/mjit/instruction.rb.erb $(srcdir)/insns.def
+	$(ECHO) generating $@
+	$(Q) $(BASERUBY) -Ku $(tooldir)/insns2vm.rb --basedir="$(srcdir)" $(INSNS2VMOPT) $@
 
 mjit-headers: $(MJIT_SUPPORT)-mjit-headers
 no-mjit-headers: PHONY
@@ -1080,7 +1088,6 @@ BUILTIN_RB_SRCS = \
 		$(srcdir)/marshal.rb \
 		$(srcdir)/mjit.rb \
 		$(srcdir)/mjit_compiler.rb \
-		$(srcdir)/mjit_instruction.rb \
 		$(srcdir)/pack.rb \
 		$(srcdir)/trace_point.rb \
 		$(srcdir)/warning.rb \
@@ -1172,7 +1179,7 @@ vm_call_iseq_optimized.inc: $(srcdir)/template/call_iseq_optimized.inc.tmpl
 	$(ECHO) generating $@
 	$(Q) $(BASERUBY) $(tooldir)/generic_erb.rb -c -o $@ $(srcdir)/template/call_iseq_optimized.inc.tmpl
 
-$(MINIPRELUDE_C): $(COMPILE_PRELUDE) $(BUILTIN_RB_SRCS) $(srcdir)/mjit_instruction.rb
+$(MINIPRELUDE_C): $(COMPILE_PRELUDE) $(BUILTIN_RB_SRCS)
 	$(ECHO) generating $@
 	$(Q) $(BASERUBY) $(tooldir)/generic_erb.rb -I$(srcdir) -o $@ \
 		$(srcdir)/template/prelude.c.tmpl $(BUILTIN_RB_SRCS)
@@ -1210,12 +1217,9 @@ builtin_binary.inc: $(PREP) $(BUILTIN_RB_SRCS) $(srcdir)/template/builtin_binary
 
 $(BUILTIN_RB_INCS): $(top_srcdir)/tool/mk_builtin_loader.rb
 
-$(srcdir)/revision.h:
-$(srcdir)/revision.h$(gnumake:yes=-nongnumake):
-	$(Q)$(RM) $(@F)
-	$(Q)$(NULLCMD) > $@ || $(NULLCMD) > $(@F)
+$(srcdir)/revision.h: $(REVISION_H)
 
-revision.tmp::
+revision.$(HAVE_BASERUBY:no=tmp)::
 	$(Q) $(NULLCMD) > $@
 revision.$(HAVE_BASERUBY:yes=tmp):: $(srcdir)/version.h $(tooldir)/file2lastrev.rb $(REVISION_FORCE)
 	$(Q) $(BASERUBY) $(tooldir)/file2lastrev.rb -q --revision.h --srcdir="$(srcdir)" > $@
@@ -1462,7 +1466,7 @@ no-test-syntax-suggest:
 
 test-bundler-precheck: $(TEST_RUNNABLE)-test-bundler-precheck
 no-test-bundler-precheck:
-yes-test-bundler-precheck: main
+yes-test-bundler-precheck: main $(arch)-fake.rb
 
 no-test-bundler-prepare: no-test-bundler-precheck
 yes-test-bundler-prepare: yes-test-bundler-precheck
@@ -1549,34 +1553,28 @@ update-unicode: $(UNICODE_FILES) $(UNICODE_PROPERTY_FILES) \
 		$(UNICODE_AUXILIARY_FILES) $(UNICODE_UCD_EMOJI_FILES) $(UNICODE_EMOJI_FILES)
 
 CACHE_DIR = $(srcdir)/.downloaded-cache
+UNICODE_DOWNLOADER_ALWAYS_UPDATE = $(ALWAYS_UPDATE_UNICODE:yes=--always)
+UNICODE_DOWNLOADER = \
+	$(BASERUBY) $(tooldir)/downloader.rb \
+	    --cache-dir=$(CACHE_DIR) \
+	    --exist $(UNICODE_DOWNLOADER_ALWAYS_UPDATE:no=) \
+	    unicode --unicode-beta=$(UNICODE_BETA)
 UNICODE_DOWNLOAD = \
-	$(BASERUBY) $(tooldir)/downloader.rb \
-	    --cache-dir=$(CACHE_DIR) \
-	    --unicode-beta $(UNICODE_BETA) \
+	$(UNICODE_DOWNLOADER) \
 	    -d $(UNICODE_SRC_DATA_DIR) \
-	    -p $(UNICODE_VERSION)/ucd \
-	    -e $(ALWAYS_UPDATE_UNICODE:yes=-a) unicode
+	    -p $(UNICODE_VERSION)/ucd
 UNICODE_AUXILIARY_DOWNLOAD = \
-	$(BASERUBY) $(tooldir)/downloader.rb \
-	    --cache-dir=$(CACHE_DIR) \
-	    --unicode-beta $(UNICODE_BETA) \
+	$(UNICODE_DOWNLOADER) \
 	    -d $(UNICODE_SRC_DATA_DIR)/auxiliary \
-	    -p $(UNICODE_VERSION)/ucd/auxiliary \
-	    -e $(ALWAYS_UPDATE_UNICODE:yes=-a) unicode
+	    -p $(UNICODE_VERSION)/ucd/auxiliary
 UNICODE_UCD_EMOJI_DOWNLOAD = \
-	$(BASERUBY) $(tooldir)/downloader.rb \
-	    --cache-dir=$(CACHE_DIR) \
-	    --unicode-beta $(UNICODE_BETA) \
+	$(UNICODE_DOWNLOADER) \
 	    -d $(UNICODE_SRC_DATA_DIR)/emoji \
-	    -p $(UNICODE_VERSION)/ucd/emoji \
-	    -e $(ALWAYS_UPDATE_UNICODE:yes=-a) unicode
+	    -p $(UNICODE_VERSION)/ucd/emoji
 UNICODE_EMOJI_DOWNLOAD = \
-	$(BASERUBY) $(tooldir)/downloader.rb \
-	    --cache-dir=$(CACHE_DIR) \
-	    --unicode-beta $(UNICODE_BETA) \
+	$(UNICODE_DOWNLOADER) \
 	    -d $(UNICODE_SRC_EMOJI_DATA_DIR) \
-	    -p emoji/$(UNICODE_EMOJI_VERSION) \
-	    -e $(ALWAYS_UPDATE_UNICODE:yes=-a) unicode
+	    -p emoji/$(UNICODE_EMOJI_VERSION)
 
 $(UNICODE_FILES) $(UNICODE_PROPERTY_FILES): update-unicode-files
 update-unicode-files:
@@ -1643,19 +1641,19 @@ $(UNICODE_HDR_DIR)/name2ctype.h:
 	$(MV) $@.new $@
 
 # the next non-comment line was:
-# $(UNICODE_HDR_DIR)/casefold.h: $(srcdir)/enc/unicode/case-folding.rb \
+# $(UNICODE_HDR_DIR)/casefold.h: $(tooldir)/enc-case-folding.rb \
 # but was changed to make sure CI works on systems that don't have gperf
 unicode-up: $(UNICODE_DATA_HEADERS)
 
 $(UNICODE_HDR_DIR)/$(ALWAYS_UPDATE_UNICODE:yes=casefold.h): \
-		$(srcdir)/enc/unicode/case-folding.rb \
+		$(tooldir)/enc-case-folding.rb \
 		$(UNICODE_SRC_DATA_DIR)/UnicodeData.txt \
 		$(UNICODE_SRC_DATA_DIR)/SpecialCasing.txt \
 		$(UNICODE_SRC_DATA_DIR)/CaseFolding.txt
 
 $(UNICODE_HDR_DIR)/casefold.h:
 	$(MAKEDIRS) $(@D)
-	$(Q) $(BASERUBY) $(srcdir)/enc/unicode/case-folding.rb \
+	$(Q) $(BASERUBY) $(tooldir)/enc-case-folding.rb \
 		--output-file=$@ \
 		--mapping-data-directory=$(UNICODE_SRC_DATA_DIR)
 
@@ -8328,6 +8326,7 @@ load.$(OBJEXT): {$(VPATH)}vm_core.h
 load.$(OBJEXT): {$(VPATH)}vm_opts.h
 loadpath.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 loadpath.$(OBJEXT): $(hdrdir)/ruby/version.h
+loadpath.$(OBJEXT): $(top_srcdir)/revision.h
 loadpath.$(OBJEXT): $(top_srcdir)/version.h
 loadpath.$(OBJEXT): {$(VPATH)}assert.h
 loadpath.$(OBJEXT): {$(VPATH)}backward/2/assume.h
@@ -9363,7 +9362,6 @@ miniinit.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 miniinit.$(OBJEXT): $(CCAN_DIR)/list/list.h
 miniinit.$(OBJEXT): $(CCAN_DIR)/str/str.h
 miniinit.$(OBJEXT): $(hdrdir)/ruby/ruby.h
-miniinit.$(OBJEXT): $(srcdir)/mjit_instruction.rb
 miniinit.$(OBJEXT): $(top_srcdir)/internal/array.h
 miniinit.$(OBJEXT): $(top_srcdir)/internal/compilers.h
 miniinit.$(OBJEXT): $(top_srcdir)/internal/gc.h
@@ -9558,7 +9556,6 @@ miniinit.$(OBJEXT): {$(VPATH)}miniprelude.c
 miniinit.$(OBJEXT): {$(VPATH)}missing.h
 miniinit.$(OBJEXT): {$(VPATH)}mjit.rb
 miniinit.$(OBJEXT): {$(VPATH)}mjit_compiler.rb
-miniinit.$(OBJEXT): {$(VPATH)}mjit_instruction.rb
 miniinit.$(OBJEXT): {$(VPATH)}nilclass.rb
 miniinit.$(OBJEXT): {$(VPATH)}node.h
 miniinit.$(OBJEXT): {$(VPATH)}numeric.rb
@@ -9815,7 +9812,6 @@ mjit_compiler.$(OBJEXT): $(CCAN_DIR)/list/list.h
 mjit_compiler.$(OBJEXT): $(CCAN_DIR)/str/str.h
 mjit_compiler.$(OBJEXT): $(hdrdir)/ruby.h
 mjit_compiler.$(OBJEXT): $(hdrdir)/ruby/ruby.h
-mjit_compiler.$(OBJEXT): $(srcdir)/mjit_instruction.rb
 mjit_compiler.$(OBJEXT): $(top_srcdir)/internal/array.h
 mjit_compiler.$(OBJEXT): $(top_srcdir)/internal/class.h
 mjit_compiler.$(OBJEXT): $(top_srcdir)/internal/compile.h
@@ -10001,7 +9997,6 @@ mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_compiler.c
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_compiler.h
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_compiler.rb
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_compiler.rbinc
-mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_instruction.rbinc
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_unit.h
 mjit_compiler.$(OBJEXT): {$(VPATH)}node.h
 mjit_compiler.$(OBJEXT): {$(VPATH)}ruby_assert.h

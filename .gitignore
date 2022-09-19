@@ -238,7 +238,10 @@ compile_commands.json
 /rb_mjit_header.h
 /mjit_config.h
 /include/ruby-*/*/rb_mjit_min_header-*.h
-/mjit_instruction.rb
+/lib/mjit/instruction.rb
+
+# YJIT
+/yjit-bench
 
 # /wasm/
 /wasm/tests/*.wasm
