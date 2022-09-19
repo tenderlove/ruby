@@ -1951,10 +1951,13 @@ check_id_type(VALUE obj, VALUE *pname,
 VALUE
 rb_obj_remove_instance_variable(VALUE obj, VALUE name)
 {
-    rb_check_frozen(obj);
-
     VALUE val = Qnil;
     const ID id = id_for_var(obj, name, an, instance);
+
+    // Frozen check comes here because it's expected that we raise a
+    // NameError (from the id_for_var check) before we raise a FrozenError
+    rb_check_frozen(obj);
+
     attr_index_t index;
 
     if (!id) {
