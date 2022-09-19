@@ -431,7 +431,7 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
         rb_funcall(clone, id_init_clone, 1, obj);
         RBASIC(clone)->flags |= RBASIC(obj)->flags & FL_FREEZE;
         if (RB_OBJ_FROZEN(obj)) {
-            rb_shape_transition_shape_frozen(obj);
+            rb_shape_transition_shape_frozen(clone);
         }
         break;
       case Qtrue:
@@ -448,7 +448,7 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
         argv[1] = freeze_true_hash;
         rb_funcallv_kw(clone, id_init_clone, 2, argv, RB_PASS_KEYWORDS);
         RBASIC(clone)->flags |= FL_FREEZE;
-        rb_shape_transition_shape_frozen(obj);
+        rb_shape_transition_shape_frozen(clone);
         break;
         }
       case Qfalse:

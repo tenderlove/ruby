@@ -30,6 +30,7 @@ class TestShapes < Test::Unit::TestCase
     assert_equal(shape1.id, shape2.id)
     assert_equal(shape1.parent_id, shape2.parent_id)
     assert_equal(shape1.depth, shape2.depth)
+    assert_equal(shape1.type, shape2.type)
   end
 
   def refute_shape_equal(shape1, shape2)

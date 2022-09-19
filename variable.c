@@ -1766,7 +1766,13 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         }
         RB_VM_LOCK_LEAVE();
 
-        rb_shape_set_shape(clone, rb_shape_get_shape(obj));
+        rb_shape_t * obj_shape = rb_shape_get_shape(obj);
+        if (rb_shape_frozen_shape_p(obj_shape)) {
+            rb_shape_set_shape(clone, obj_shape->parent);
+        }
+        else {
+            rb_shape_set_shape(clone, obj_shape);
+        }
     }
     return;
 
