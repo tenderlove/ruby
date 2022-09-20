@@ -1002,16 +1002,6 @@ gen_ivtbl_dup(const struct gen_ivtbl *orig)
 }
 #endif
 
-static uint32_t
-iv_index_tbl_newsize(rb_shape_t * shape, bool iv_extended)
-{
-    attr_index_t index = (attr_index_t)shape->iv_count;	/* should not overflow */
-    if (iv_extended) {
-        return (index+1) + (index+1)/4; /* (index+1)*1.25 */
-    }
-    return index;
-}
-
 static int
 generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
 {
@@ -1028,8 +1018,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
         }
     }
     FL_SET((VALUE)*k, FL_EXIVAR);
-    uint32_t newsize = iv_index_tbl_newsize(ivup->shape, 0);
-    ivtbl = gen_ivtbl_resize(ivtbl, newsize);
+    ivtbl = gen_ivtbl_resize(ivtbl, ivup->shape->iv_count);
     // Reinsert in to the hash table because ivtbl might be a newly resized chunk of memory
     *v = (st_data_t)ivtbl;
     ivup->ivtbl = ivtbl;
@@ -1485,7 +1474,7 @@ rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 
     uint32_t len = ROBJECT_NUMIV(obj);
     if (len <= index) {
-        uint32_t newsize = iv_index_tbl_newsize(shape, 1);
+        uint32_t newsize = (shape->iv_count + 1) * 1.25;
         rb_ensure_iv_list_size(obj, len, newsize);
     }
     RUBY_ASSERT(index <= ROBJECT_NUMIV(obj));
