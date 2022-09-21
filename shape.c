@@ -96,32 +96,8 @@ static shape_id_t
 get_next_shape_id(void)
 {
     rb_vm_t *vm = GET_VM();
-    shape_id_t next_shape_id = 0;
-
-    /*
-     * Speedup for getting next shape_id by using bitmaps
-     * TODO: Can further optimize here by nesting more bitmaps
-     */
-    for (int i = 0; i < SHAPE_BITMAP_SIZE; i++) {
-        uint32_t cur_bitmap = vm->shape_bitmaps[i];
-        if (~cur_bitmap) {
-            uint32_t copied_curbitmap = ~cur_bitmap;
-
-            uint32_t count = 0;
-            while (!(copied_curbitmap & 0x1)) {
-                copied_curbitmap >>= 1;
-                count++;
-            }
-            next_shape_id = i * 32 + count;
-            break;
-        }
-    }
-
-    if (next_shape_id > vm->max_shape_count) {
-        vm->max_shape_count = next_shape_id;
-    }
-
-    return next_shape_id;
+    vm->max_shape_count++;
+    return vm->max_shape_count;
 }
 
 static rb_shape_t *
@@ -353,34 +329,12 @@ rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
     }
 }
 
-static void
-rb_shape_set_shape_in_bitmap(shape_id_t shape_id) {
-    uint16_t bitmap_index = shape_id >> 5;
-    uint32_t mask = (1 << (shape_id & 31));
-    GET_VM()->shape_bitmaps[bitmap_index] |= mask;
-}
-
-static void
-rb_shape_unset_shape_in_bitmap(shape_id_t shape_id) {
-    uint16_t bitmap_index = shape_id >> 5;
-    uint32_t mask = (1 << (shape_id & 31));
-    GET_VM()->shape_bitmaps[bitmap_index] &= ~mask;
-}
-
 void
 rb_shape_set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
 
     RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
-
-    if (shape == NULL) {
-        rb_shape_unset_shape_in_bitmap(shape_id);
-    }
-    else {
-        rb_shape_set_shape_in_bitmap(shape_id);
-    }
-
     vm->shape_list[shape_id] = shape;
 }
 

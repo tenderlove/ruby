@@ -4061,9 +4061,6 @@ Init_vm_objects(void)
         rb_memerror();
     }
 
-    for (int i = 0; i < SHAPE_BITMAP_SIZE; i++) {
-        vm->shape_bitmaps[i] = 0;
-    }
     vm->max_shape_count = 0;
 
     // Root shape
