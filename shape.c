@@ -179,7 +179,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum shape_type sha
                     }
 
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
-                    RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
+                    RB_OBJ_WRITTEN((VALUE)shape, Qundef, (VALUE)new_shape);
                     rb_shape_set_shape_by_id(next_shape_id, new_shape);
 
                     res = new_shape;
