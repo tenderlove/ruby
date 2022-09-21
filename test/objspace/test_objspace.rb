@@ -118,10 +118,7 @@ class TestObjSpace < Test::Unit::TestCase
     begin;
       def assert_reachable_object_as_expected(expectation, reachable_objects_from_array)
         reachable_objects = ObjectSpace.reachable_objects_from(reachable_objects_from_array)
-        imemo_reachable, other_reachable = reachable_objects.partition { _1.inspect =~ /IMEMO/ }
-        assert_equal(imemo_reachable.size, 1)
-        assert_match(/IMEMO/, imemo_reachable.first.inspect)
-        assert_equal(expectation, other_reachable)
+        assert_equal(expectation, reachable_objects)
       end
 
       assert_equal(nil, ObjectSpace.reachable_objects_from(nil))
@@ -657,7 +654,7 @@ class TestObjSpace < Test::Unit::TestCase
     begin
       bar
     rescue => err
-      _, _, m = ObjectSpace.reachable_objects_from(err)
+      _, m = ObjectSpace.reachable_objects_from(err)
     end
     assert_equal(m, m.clone)
   end
