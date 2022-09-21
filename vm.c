@@ -2721,7 +2721,7 @@ rb_vm_update_references(void *ptr)
         vm->top_self = rb_gc_location(vm->top_self);
         vm->orig_progname = rb_gc_location(vm->orig_progname);
 
-        for (shape_id_t i = 0; i < vm->max_shape_count; i++) {
+        for (shape_id_t i = 0; i <= vm->max_shape_count; i++) {
             if (vm->shape_list[i]) {
                 vm->shape_list[i] = (rb_shape_t *)rb_gc_location((VALUE)vm->shape_list[i]);
             }
@@ -4061,8 +4061,6 @@ Init_vm_objects(void)
         rb_memerror();
     }
 
-    vm->max_shape_count = 0;
-
     // Root shape
     vm->root_shape = rb_shape_alloc(ROOT_SHAPE_ID,
             0,
@@ -4078,6 +4076,7 @@ Init_vm_objects(void)
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
     rb_shape_set_shape_by_id(FROZEN_ROOT_SHAPE_ID, vm->frozen_root_shape);
     RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);
+    vm->max_shape_count = 1;
 }
 
 /* Stub for builtin function when not building YJIT units*/

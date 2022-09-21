@@ -11,14 +11,12 @@
  */
 static rb_shape_t*
 rb_shape_get_root_shape(void) {
-    rb_vm_t *vm = GET_VM();
-    return vm->root_shape;
+    return GET_VM()->root_shape;
 }
 
 static rb_shape_t*
 rb_shape_get_frozen_root_shape(void) {
-    rb_vm_t *vm = GET_VM();
-    return vm->frozen_root_shape;
+    return GET_VM()->frozen_root_shape;
 }
 
 bool
