@@ -7115,7 +7115,8 @@ rb_daemon(int nochdir, int noclose)
       default: _exit(EXIT_SUCCESS);
     }
 
-    if (setsid() < 0) return -1;
+    /* ignore EPERM which means already being process-leader */
+    if (setsid() < 0) (void)0;
 
     if (!nochdir)
         err = chdir("/");
@@ -8721,7 +8722,7 @@ get_PROCESS_ID(ID _x, VALUE *_y)
 
 /*
  *  call-seq:
- *     Process.kill(signal, pid, ...)    -> integer
+ *     Process.kill(signal, pid, *pids)    -> integer
  *
  *  Sends the given signal to the specified process id(s) if _pid_ is positive.
  *  If _pid_ is zero, _signal_ is sent to all processes whose group ID is equal
@@ -8973,6 +8974,14 @@ InitVM_process(void)
      * see the system getrlimit(2) manual for details.
      */
     rb_define_const(rb_mProcess, "RLIMIT_NPROC", INT2FIX(RLIMIT_NPROC));
+#endif
+#ifdef RLIMIT_NPTS
+    /* The maximum number of pseudo-terminals that can be created for the
+     * real user ID of the calling process.
+     *
+     * see the system getrlimit(2) manual for details.
+     */
+    rb_define_const(rb_mProcess, "RLIMIT_NPTS", INT2FIX(RLIMIT_NPTS));
 #endif
 #ifdef RLIMIT_RSS
     /* Specifies the limit (in pages) of the process's resident set.
