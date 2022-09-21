@@ -7227,8 +7227,8 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_shape:
         {
             rb_shape_t *shape = (rb_shape_t *)obj;
-            if (!rb_shape_root_shape_p(shape)) {
-                rb_gc_mark((VALUE)shape->parent);
+            if (shape->edges) {
+                mark_m_tbl(objspace, shape->edges);
             }
         }
         return;
@@ -7275,7 +7275,6 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
     }
 
     gc_mark(objspace, any->as.basic.klass);
-    rb_gc_mark((VALUE)rb_shape_get_shape(obj));
 
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
