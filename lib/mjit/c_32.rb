@@ -204,6 +204,20 @@ module RubyVM::MJIT
     )
   end
 
+  def C.rb_control_frame_t
+    @rb_control_frame_t ||= CType::Struct.new(
+      "rb_control_frame_struct", 32,
+      pc: [0, CType::Pointer.new { self.VALUE }],
+      sp: [32, CType::Pointer.new { self.VALUE }],
+      iseq: [64, CType::Pointer.new { self.rb_iseq_t }],
+      self: [96, self.VALUE],
+      ep: [128, CType::Pointer.new { self.VALUE }],
+      block_code: [160, CType::Pointer.new { CType::Immediate.new(0) }],
+      __bp__: [192, CType::Pointer.new { self.VALUE }],
+      jit_return: [224, CType::Pointer.new { CType::Immediate.new(0) }],
+    )
+  end
+
   def C.rb_cref_t
     @rb_cref_t ||= CType::Struct.new(
       "rb_cref_struct", 20,
@@ -213,6 +227,43 @@ module RubyVM::MJIT
       next: [96, CType::Pointer.new { self.rb_cref_struct }],
       scope_visi: [128, self.rb_scope_visibility_t],
     )
+  end
+
+  def C.rb_execution_context_struct
+    @rb_execution_context_struct ||= CType::Struct.new(
+      "rb_execution_context_struct", 244,
+      vm_stack: [0, CType::Pointer.new { self.VALUE }],
+      vm_stack_size: [32, CType::Immediate.new(-4)],
+      cfp: [64, CType::Pointer.new { self.rb_control_frame_t }],
+      tag: [96, CType::Pointer.new { self.rb_vm_tag }],
+      interrupt_flag: [128, self.rb_atomic_t],
+      interrupt_mask: [160, self.rb_atomic_t],
+      fiber_ptr: [192, CType::Pointer.new { self.rb_fiber_t }],
+      thread_ptr: [224, CType::Pointer.new { self.rb_thread_struct }],
+      local_storage: [256, CType::Pointer.new { self.rb_id_table }],
+      local_storage_recursive_hash: [288, self.VALUE],
+      local_storage_recursive_hash_for_trace: [320, self.VALUE],
+      root_lep: [352, CType::Pointer.new { self.VALUE }],
+      root_svar: [384, self.VALUE],
+      ensure_list: [416, CType::Pointer.new { self.rb_ensure_list_t }],
+      trace_arg: [448, CType::Pointer.new { self.rb_trace_arg_struct }],
+      errinfo: [480, self.VALUE],
+      passed_block_handler: [512, self.VALUE],
+      raised_flag: [544, CType::Immediate.new(-2)],
+      method_missing_reason: [552, self.method_missing_reason],
+      private_const_reference: [576, self.VALUE],
+      machine: [608, CType::Struct.new(
+        "", 168,
+        stack_start: [0, CType::Pointer.new { self.VALUE }],
+        stack_end: [32, CType::Pointer.new { self.VALUE }],
+        stack_maxsize: [64, CType::Immediate.new(-4)],
+        regs: [96, self.jmp_buf],
+      )],
+    )
+  end
+
+  def C.rb_execution_context_t
+    @rb_execution_context_t ||= self.rb_execution_context_struct
   end
 
   def C.rb_iseq_constant_body
@@ -417,6 +468,20 @@ module RubyVM::MJIT
 
   def C.rb_scope_visibility_t = CType::Stub.new(:rb_scope_visibility_t)
 
+  def C.rb_vm_tag = CType::Stub.new(:rb_vm_tag)
+
+  def C.rb_atomic_t = CType::Stub.new(:rb_atomic_t)
+
+  def C.rb_fiber_t = CType::Stub.new(:rb_fiber_t)
+
+  def C.rb_id_table = CType::Stub.new(:rb_id_table)
+
+  def C.rb_ensure_list_t = CType::Stub.new(:rb_ensure_list_t)
+
+  def C.rb_trace_arg_struct = CType::Stub.new(:rb_trace_arg_struct)
+
+  def C.jmp_buf = CType::Stub.new(:jmp_buf)
+
   def C.rb_iseq_type = CType::Stub.new(:rb_iseq_type)
 
   def C.rb_iseq_param_keyword = CType::Stub.new(:rb_iseq_param_keyword)
@@ -428,8 +493,6 @@ module RubyVM::MJIT
   def C.rb_snum_t = CType::Stub.new(:rb_snum_t)
 
   def C.iseq_bits_t = CType::Stub.new(:iseq_bits_t)
-
-  def C.rb_id_table = CType::Stub.new(:rb_id_table)
 
   def C.rb_code_location_t = CType::Stub.new(:rb_code_location_t)
 
