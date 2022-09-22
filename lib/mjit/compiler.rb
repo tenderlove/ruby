@@ -86,6 +86,13 @@ module RubyVM::MJIT
         src << "    }\n"
       end
 
+      # Generate merged ivar guards first if needed
+      if !status.compile_info.disable_ivar_cache && status.merge_ivar_guards_p
+        src << "    if (UNLIKELY(!(RB_TYPE_P(GET_SELF(), T_OBJECT)))) {"
+        src << "        goto ivar_cancel;\n"
+        src << "    }\n"
+      end
+
       C.fprintf(f, src)
       compile_insns(0, 0, status, iseq.body, f)
       compile_cancel_handler(f, iseq.body, status)
@@ -354,44 +361,39 @@ module RubyVM::MJIT
         src << "{\n"
         src << "    VALUE obj = GET_SELF();\n"
         src << "    const shape_id_t source_shape_id = (rb_serial_t)#{ic_copy.source_shape_id};\n"
-        if status.merge_ivar_guards_p
-          # JIT: Access ivar without checking these VM_ASSERTed prerequisites as we checked them in the beginning of `mjit_compile_body`
-          src << "    VM_ASSERT(RB_TYPE_P(obj, T_OBJECT));\n"
-          # JIT: cache hit path of vm_getivar/vm_setivar, or cancel JIT (recompile it with exivar)
-          if insn_name == :setinstancevariable
-            src << "    const uint32_t index = #{ic_copy.attr_index - 1};\n"
-            src << "    const shape_id_t dest_shape_id = (rb_serial_t)#{ic_copy.dest_shape_id};\n"
-            src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj)) {\n"
-            src << "        if (dest_shape_id != ROBJECT_SHAPE_ID(obj)) {\n"
-            src << "           if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {\n"
-            src << "               rb_init_iv_list(obj);\n"
-            src << "           }\n"
-            src << "           ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);\n"
-            src << "        }\n"
-            src << "        VALUE *ptr = ROBJECT_IVPTR(obj);\n"
-            src << "        RB_OBJ_WRITE(obj, &ptr[index], stack[#{stack_size - 1}]);\n"
+        # JIT: cache hit path of vm_getivar/vm_setivar, or cancel JIT (recompile it with exivar)
+        if insn_name == :setinstancevariable
+          src << "    const uint32_t index = #{ic_copy.attr_index - 1};\n"
+          src << "    const shape_id_t dest_shape_id = (rb_serial_t)#{ic_copy.dest_shape_id};\n"
+          src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj) && \n"
+          src << "        dest_shape_id != ROBJECT_SHAPE_ID(obj)) {\n"
+          src << "        if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {\n"
+          src << "           rb_init_iv_list(obj);\n"
+          src << "        }\n"
+          src << "        ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);\n"
+          src << "        VALUE *ptr = ROBJECT_IVPTR(obj);\n"
+          src << "        RB_OBJ_WRITE(obj, &ptr[index], stack[#{stack_size - 1}]);\n"
+          src << "    }\n"
+        else
+          if ic_copy.attr_index == 0 # cache hit, but uninitialized iv
+            src << "    /* Uninitialized instance variable */\n"
+            src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj))) {\n"
+            src << "        stack[#{stack_size}] = Qnil;\n"
             src << "    }\n"
           else
-            if ic_copy.attr_index == 0 # cache hit, but uninitialized iv
-              src << "    /* Uninitialized instance variable */\n"
-              src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj))) {\n"
-              src << "        stack[#{stack_size}] = Qnil;\n"
-              src << "    }\n"
-            else
-              src << "    const uint32_t index = #{ic_copy.attr_index - 1};\n"
-              src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj)) {\n"
-              src << "        stack[#{stack_size}] = ROBJECT_IVPTR(obj)[index];\n"
-              src << "    }\n"
-            end
+            src << "    const uint32_t index = #{ic_copy.attr_index - 1};\n"
+            src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj)) {\n"
+            src << "        stack[#{stack_size}] = ROBJECT_IVPTR(obj)[index];\n"
+            src << "    }\n"
           end
-          src << "    else {\n"
-          src << "        reg_cfp->pc = original_body_iseq + #{pos};\n"
-          src << "        reg_cfp->sp = vm_base_ptr(reg_cfp) + #{stack_size};\n"
-          src << "        goto ivar_cancel;\n"
-          src << "    }\n"
-          src << "}\n"
-          return src
         end
+        src << "    else {\n"
+        src << "        reg_cfp->pc = original_body_iseq + #{pos};\n"
+        src << "        reg_cfp->sp = vm_base_ptr(reg_cfp) + #{stack_size};\n"
+        src << "        goto ivar_cancel;\n"
+        src << "    }\n"
+        src << "}\n"
+        return src
       elsif insn_name == :getinstancevariable && !status.compile_info.disable_exivar_cache && ic_copy.source_shape_id != C.INVALID_SHAPE_ID
         # JIT: optimize away motion of sp and pc. This path does not call rb_warning() and so it's always leaf and not `handles_sp`.
         # compile_pc_and_sp(src, insn, stack_size, sp_inc, local_stack_p, next_pos)
@@ -403,7 +405,7 @@ module RubyVM::MJIT
         src << "    const uint32_t index = #{ic_copy.attr_index - 1};\n"
         # JIT: cache hit path of vm_getivar, or cancel JIT (recompile it without any ivar optimization)
         src << "    struct gen_ivtbl *ivtbl;\n"
-        src << "    if (LIKELY(FL_TEST_RAW(obj, FL_EXIVAR) && source_shape_id == rb_shape_get_shape_id(obj) && rb_ivar_generic_ivtbl_lookup(obj, &ivtbl) && index < ivtbl->numiv) {\n"
+        src << "    if (LIKELY(FL_TEST_RAW(obj, FL_EXIVAR) && source_shape_id == rb_shape_get_shape_id(obj) && rb_ivar_generic_ivtbl_lookup(obj, &ivtbl))) {\n"
         src << "        stack[#{stack_size}] = ivtbl->ivptr[index];\n"
         src << "    }\n"
         src << "    else {\n"
