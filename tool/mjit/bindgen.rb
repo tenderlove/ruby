@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('./Gemfile', __dir__)
+require 'bundler/setup'
+
 require 'etc'
 require 'fiddle/import'
 require 'set'
@@ -8,20 +12,9 @@ unless build_dir = ARGV.first
   abort "Usage: #{$0} BUILD_DIR"
 end
 
-if Fiddle::SIZEOF_VOIDP == 8
-  arch_bits = 64
-else
-  arch_bits = 32
-end
-
 # Help ffi-clang find libclang
-if arch_bits == 64
-  # apt install libclang1
-  ENV['LIBCLANG'] ||= Dir.glob("/lib/#{RUBY_PLATFORM}-gnu/libclang-*.so*").grep_v(/-cpp/).sort.last
-else
-  # apt install libclang1:i386
-  ENV['LIBCLANG'] ||= Dir.glob("/lib/i386-linux-gnu/libclang-*.so*").sort.last
-end
+# Hint: apt install libclang1
+ENV['LIBCLANG'] ||= Dir.glob("/lib/#{RUBY_PLATFORM}-gnu/libclang-*.so*").grep_v(/-cpp/).sort.last
 require 'ffi/clang'
 
 class Node < Struct.new(
@@ -32,218 +25,17 @@ class Node < Struct.new(
   :bitwidth,
   :sizeof_type,
   :offsetof,
-  :tokens,
   :enum_value,
   :children,
   keyword_init: true,
 )
 end
 
-class CParser
-  def initialize(tokens)
-    @tokens = lex(tokens)
-    @pos = 0
-  end
-
-  def parse
-    expression
-  end
-
-  private
-
-  def lex(toks)
-    toks.map do |tok|
-      case tok
-      when /\A\d+\z/         then [:NUMBER, tok]
-      when /\A0x[0-9a-f]*\z/ then [:NUMBER, tok]
-      when '('               then [:LEFT_PAREN, tok]
-      when ')'               then [:RIGHT_PAREN, tok]
-      when 'unsigned', 'int', 'uintptr_t' then [:TYPE, tok]
-      when '<<'              then [:LSHIFT, tok]
-      when '>>'              then [:RSHIFT, tok]
-      when '-'               then [:MINUS, tok]
-      when '+'               then [:PLUS, tok]
-      when /\A\w+\z/         then [:IDENT, tok]
-      else
-        raise "Unknown token: #{tok}"
-      end
-    end
-  end
-
-  def expression
-    equality
-  end
-
-  def equality
-    exp = comparison
-
-    while match(:BANG_EQUAL, :EQUAL_EQUAL)
-      operator = previous
-      right = comparison
-      exp = [:BINARY, operator, exp, right]
-    end
-
-    exp
-  end
-
-  def comparison
-    expr = term
-
-    while match(:GREATER, :GREATER_EQUAL, :LESS, :LESS_EQUAL)
-      operator = previous
-      right = comparison
-      expr = [:BINARY, operator, expr, right]
-    end
-
-    expr
-  end
-
-  def term
-    expr = bitwise
-
-    while match(:MINUS, :PLUS)
-      operator = previous
-      right = bitwise
-      expr = [:BINARY, operator, expr, right]
-    end
-
-    expr
-  end
-
-  def bitwise
-    expr = unary
-
-    while match(:RSHIFT, :LSHIFT)
-      operator = previous
-      right = unary
-      expr = [:BINARY, operator, expr, right]
-    end
-
-    expr
-  end
-
-  def unary
-    if match(:BANG, :MINUS)
-      [:UNARY, previous, primary]
-    else
-      primary
-    end
-  end
-
-  def primary
-    if match(:LEFT_PAREN)
-      grouping
-    else
-      if match(:IDENT)
-        [:VAR, previous]
-      elsif match(:NUMBER)
-        previous
-      else
-        raise peek.inspect
-      end
-    end
-  end
-
-  def grouping
-    if peek.first == :TYPE
-      cast = types
-      consume(:RIGHT_PAREN)
-      exp = [:TYPECAST, cast, unary]
-    else
-      exp = [:GROUP, expression]
-      consume(:RIGHT_PAREN)
-    end
-    exp
-  end
-
-  def consume(tok)
-    unless peek.first == tok
-      raise "Expected #{tok} but was #{peek}"
-    end
-    advance
-  end
-
-  def types
-    list = []
-    loop do
-      thing = peek
-      break unless thing.first == :TYPE
-      list << thing
-      advance
-    end
-    list
-  end
-
-  def match(*toks)
-    advance if peek && toks.grep(peek.first).any?
-  end
-
-  def advance
-    @pos += 1
-    raise("nope") if @pos > @tokens.length
-    true
-  end
-
-  def peek
-    @tokens[@pos]
-  end
-
-  def previous
-    @tokens[@pos - 1]
-  end
-end
-
-class ToRuby
-  def visit(node)
-    send node.first, node
-  end
-
-  private
-
-  def GROUP(node)
-    "(" + visit(node[1]) + ")"
-  end
-
-  def BINARY(node)
-    visit(node[2]) + " " + visit(node[1]) + " " + visit(node[3])
-  end
-
-  def TYPECAST(node)
-    visit node[2]
-  end
-
-  def NUMBER(node)
-    node[1].to_s
-  end
-
-  def UNARY(node)
-    visit(node[1]) + visit(node[2])
-  end
-
-  def lit(node)
-    node.last
-  end
-
-  alias MINUS lit
-  alias RSHIFT lit
-  alias LSHIFT lit
-
-  def IDENT(node)
-    "self.#{node.last}"
-  end
-
-  def VAR(node)
-    visit node[1]
-  end
-end
-
 # Parse a C header with ffi-clang and return Node objects.
 # To ease the maintenance, ffi-clang should be used only inside this class.
 class HeaderParser
   def initialize(header, cflags:)
-    @translation_unit = FFI::Clang::Index.new.parse_translation_unit(
-      header, cflags, [], { detailed_preprocessing_record: true }
-    )
+    @translation_unit = FFI::Clang::Index.new.parse_translation_unit(header, cflags, [], {})
   end
 
   def parse
@@ -255,10 +47,7 @@ class HeaderParser
   def parse_children(cursor)
     children = []
     cursor.visit_children do |cursor, _parent|
-      child = parse_cursor(cursor)
-      if child.kind != :macro_expansion
-        children << child
-      end
+      children << parse_cursor(cursor)
       next :continue
     end
     children
@@ -283,11 +72,6 @@ class HeaderParser
       sizeof_type = cursor.type.sizeof
     end
 
-    tokens = nil
-    if kind == :macro_definition
-      tokens = @translation_unit.tokenize(cursor.extent).map(&:spelling)
-    end
-
     enum_value = nil
     if kind == :enum_constant_decl
       enum_value = cursor.enum_value
@@ -301,7 +85,6 @@ class HeaderParser
       bitwidth: cursor.bitwidth,
       sizeof_type: sizeof_type,
       offsetof: offsetof,
-      tokens: tokens,
       enum_value: enum_value,
       children: children,
     )
@@ -310,53 +93,53 @@ end
 
 # Convert Node objects to a Ruby binding source.
 class BindingGenerator
+  BINDGEN_BEG = '### MJIT bindgen begin ###'
+  BINDGEN_END = '### MJIT bindgen end ###'
   DEFAULTS = { '_Bool' => 'CType::Bool.new' }
   DEFAULTS.default_proc = proc { |_h, k| "CType::Stub.new(:#{k})" }
 
   attr_reader :src
 
-  # @param macros [Array<String>] Imported macros
-  # @param enums [Hash{ Symbol => Array<String> }] Imported enum values
-  # @param types [Array<String>] Imported types
+  # @param src_path [String]
+  # @param uses [Array<String>]
+  # @param ints [Array<String>]
+  # @param types [Array<String>]
+  # @param dynamic_types [Array<String>] #ifdef-dependent immediate types, which need Primitive.cexpr! for type detection
+  # @param skip_fields [Hash{ Symbol => Array<String> }] Struct fields that are skipped from bindgen
   # @param ruby_fields [Hash{ Symbol => Array<String> }] Struct VALUE fields that are considered Ruby objects
-  def initialize(macros:, enums:, types:, ruby_fields:)
+  def initialize(src_path:, uses:, ints:, types:, dynamic_types:, skip_fields:, ruby_fields:)
+    @preamble, @postamble = split_ambles(src_path)
     @src = String.new
-    @macros = macros.sort
-    @enums = enums.transform_keys(&:to_s).transform_values(&:sort).sort.to_h
+    @uses = uses.sort
+    @ints = ints.sort
     @types = types.sort
+    @dynamic_types = dynamic_types.sort
+    @skip_fields = skip_fields.transform_keys(&:to_s)
     @ruby_fields = ruby_fields.transform_keys(&:to_s)
     @references = Set.new
   end
 
   def generate(nodes)
-    # TODO: Support nested declarations
-    nodes_index = nodes.group_by(&:spelling).transform_values(&:last)
+    println @preamble
 
-    println "require_relative 'c_type'"
-    println
-    println "module RubyVM::MJIT"
-    println "  C = Object.new"
-    println
-
-    # Define macros
-    @macros.each do |macro|
-      unless definition = generate_macro(nodes_index[macro])
-        raise "Failed to generate macro: #{macro}"
-      end
-      println "  def C.#{macro} = #{definition}"
+    # Define USE_* macros
+    @uses.each do |use|
+      println "  def C.#{use}"
+      println "    Primitive.cexpr! %q{ RBOOL(#{use} != 0) }"
+      println "  end"
       println
     end
 
-    # Define enum values
-    @enums.each do |enum, values|
-      values.each do |value|
-        unless definition = generate_enum(nodes_index[enum], value)
-          raise "Failed to generate enum value: #{value}"
-        end
-        println "  def C.#{value} = #{definition}"
-        println
-      end
+    # Define int macros/enums
+    @ints.each do |int|
+      println "  def C.#{int}"
+      println "    Primitive.cexpr! %q{ INT2NUM(#{int}) }"
+      println "  end"
+      println
     end
+
+    # TODO: Support nested declarations
+    nodes_index = nodes.group_by(&:spelling).transform_values(&:last)
 
     # Define types
     @types.each do |type|
@@ -369,60 +152,69 @@ class BindingGenerator
       println
     end
 
-    # Leave a stub for types that are referenced but not targeted
-    (@references - @types).each do |type|
-      println "  def C.#{type} = #{DEFAULTS[type]}"
+    # Define dynamic types
+    @dynamic_types.each do |type|
+      unless generate_node(nodes_index[type])&.start_with?('CType::Immediate')
+        raise "Non-immediate type is given to dynamic_types: #{type}"
+      end
+      println "  def C.#{type}"
+      println "    @#{type} ||= CType::Immediate.find(Primitive.cexpr!(\"SIZEOF(#{type})\"), Primitive.cexpr!(\"SIGNED_TYPE_P(#{type})\"))"
+      println "  end"
       println
     end
 
-    chomp
-    println "end"
+    # Leave a stub for types that are referenced but not targeted
+    (@references - @types - @dynamic_types).each do |type|
+      println "  def C.#{type}"
+      println "    #{DEFAULTS[type]}"
+      println "  end"
+      println
+    end
+
+    print @postamble
   end
 
   private
 
-  def generate_macro(node)
-    if node.spelling.start_with?('USE_')
-      # Special case: Always force USE_* to be true or false
-      case node
-      in Node[kind: :macro_definition, tokens: [_, '0' | '1' => token], children: []]
-        (Integer(token) == 1).to_s
-      end
-    else
-      # Otherwise, convert a C expression to a Ruby expression when possible
-      case node
-      in Node[kind: :macro_definition, tokens: tokens, children: []]
-        if tokens.first != node.spelling
-          raise "unexpected first token: '#{tokens.first}' != '#{node.spelling}'"
-        end
-        ast = CParser.new(tokens.drop(1)).parse
-        ToRuby.new.visit(ast)
-      end
-    end
-  end
+  # Return code before BINDGEN_BEG and code after BINDGEN_END
+  def split_ambles(src_path)
+    lines = File.read(src_path).lines
 
-  def generate_enum(node, value)
-    case node
-    in Node[kind: :enum_decl, children:]
-      children.find { |c| c.spelling == value }&.enum_value
-    in Node[kind: :typedef_decl, children: [child]]
-      generate_enum(child, value)
-    end
+    preamble_end = lines.index { |l| l.include?(BINDGEN_BEG) }
+    raise "`#{BINDGEN_BEG}` was not found in '#{src_path}'" if preamble_end.nil?
+
+    postamble_beg = lines.index { |l| l.include?(BINDGEN_END) }
+    raise "`#{BINDGEN_END}` was not found in '#{src_path}'" if postamble_beg.nil?
+    raise "`#{BINDGEN_BEG}` was found after `#{BINDGEN_END}`" if preamble_end >= postamble_beg
+
+    return lines[0..preamble_end].join, lines[postamble_beg..-1].join
   end
 
   # Generate code from a node. Used for constructing a complex nested node.
   # @param node [Node]
-  def generate_node(node)
+  def generate_node(node, sizeof_type: nil)
     case node&.kind
     when :struct, :union
       # node.spelling is often empty for union, but we'd like to give it a name when it has one.
       buf = +"CType::#{node.kind.to_s.sub(/\A[a-z]/, &:upcase)}.new(\n"
-      buf << "  \"#{node.spelling}\", #{node.sizeof_type},\n"
-      node.children.each do |child|
+      buf << "  \"#{node.spelling}\", Primitive.cexpr!(\"SIZEOF(#{sizeof_type || node.type})\"),\n"
+      bit_fields_end = node.children.index { |c| c.bitwidth == -1 } || node.children.size # first non-bit field index
+      node.children.each_with_index do |child, i|
+        skip_type = sizeof_type&.gsub(/\(\(struct ([^\)]+) \*\)NULL\)->/, '\1.') || node.spelling
+        next if @skip_fields.fetch(skip_type, []).include?(child.spelling)
         field_builder = proc do |field, type|
           if node.kind == :struct
             to_ruby = @ruby_fields.fetch(node.spelling, []).include?(field)
-            "  #{field}: [#{node.offsetof.fetch(field)}, #{type}#{', true' if to_ruby}],\n"
+            if child.bitwidth > 0
+              if bit_fields_end <= i # give up offsetof calculation for non-leading bit fields
+                raise "non-leading bit fields are not supported. consider including '#{field}' in skip_fields."
+              end
+              offsetof = node.offsetof.fetch(field)
+            else
+              off_type = sizeof_type || "(*((#{node.type} *)NULL))"
+              offsetof = "Primitive.cexpr!(\"OFFSETOF(#{off_type}, #{field})\")"
+            end
+            "  #{field}: [#{type}, #{offsetof}#{', true' if to_ruby}],\n"
           else
             "  #{field}: #{type},\n"
           end
@@ -432,12 +224,17 @@ class BindingGenerator
         # BitField is struct-specific. So it must be handled here.
         in Node[kind: :field_decl, spelling:, bitwidth:, children: [_grandchild]] if bitwidth > 0
           buf << field_builder.call(spelling, "CType::BitField.new(#{bitwidth}, #{node.offsetof.fetch(spelling) % 8})")
+        # "(unnamed ...)" struct and union are handled here, which are also struct-specific.
+        in Node[kind: :field_decl, spelling:, type:, children: [grandchild]] if type.match?(/\((unnamed|anonymous) [^)]+\)\z/)
+          if sizeof_type
+            child_type = "#{sizeof_type}.#{child.spelling}"
+          else
+            child_type = "((#{node.type} *)NULL)->#{child.spelling}"
+          end
+          buf << field_builder.call(spelling, generate_node(grandchild, sizeof_type: child_type).gsub(/^/, '  ').sub(/\A +/, ''))
         # In most cases, we'd like to let generate_type handle the type unless it's "(unnamed ...)".
-        in Node[kind: :field_decl, spelling:, type:] if !type.empty? && !type.match?(/\((unnamed|anonymous) [^)]+\)\z/)
+        in Node[kind: :field_decl, spelling:, type:] if !type.empty?
           buf << field_builder.call(spelling, generate_type(type))
-        # Lastly, "(unnamed ...)" struct and union are handled here, which are also struct-specific.
-        in Node[kind: :field_decl, spelling:, children: [grandchild]]
-          buf << field_builder.call(spelling, generate_node(grandchild).gsub(/^/, '  ').sub(/\A +/, ''))
         else # forward declarations are ignored
         end
       end
@@ -477,10 +274,16 @@ class BindingGenerator
     else
       begin
         ctype = Fiddle::Importer.parse_ctype(type)
-        "CType::Immediate.new(#{ctype})"
       rescue Fiddle::DLError
         push_target(type)
         "self.#{type}"
+      else
+        # Convert any function pointers to void* to workaround FILE* vs int*
+        if ctype == Fiddle::TYPE_VOIDP
+          "CType::Immediate.parse(\"void *\")"
+        else
+          "CType::Immediate.parse(#{type.dump})"
+        end
       end
     end
   end
@@ -510,6 +313,7 @@ class BindingGenerator
 end
 
 src_dir = File.expand_path('../..', __dir__)
+src_path = File.join(src_dir, 'mjit_c.rb')
 build_dir = File.expand_path(build_dir)
 cflags = [
   src_dir,
@@ -520,31 +324,28 @@ cflags = [
 
 nodes = HeaderParser.new(File.join(src_dir, 'mjit_compiler.h'), cflags: cflags).parse
 generator = BindingGenerator.new(
-  macros: %w[
-    NOT_COMPILED_STACK_SIZE
-    SHAPE_MASK
-    INVALID_SHAPE_ID
+  src_path: src_path,
+  uses: %w[
     USE_LAZY_LOAD
     USE_RVARGC
-    VM_CALL_KW_SPLAT
-    VM_CALL_TAILCALL
   ],
-  enums: {
-    rb_method_type_t: %w[
-      VM_METHOD_TYPE_CFUNC
-      VM_METHOD_TYPE_ISEQ
-    ],
-    vm_call_flag_bits: %w[
-      VM_CALL_KW_SPLAT_bit
-      VM_CALL_TAILCALL_bit
-    ],
-  },
+  ints: %w[
+    INVALID_SHAPE_ID
+    NOT_COMPILED_STACK_SIZE
+    SHAPE_MASK
+    VM_CALL_KW_SPLAT
+    VM_CALL_KW_SPLAT_bit
+    VM_CALL_TAILCALL
+    VM_CALL_TAILCALL_bit
+    VM_METHOD_TYPE_CFUNC
+    VM_METHOD_TYPE_ISEQ
+  ],
   types: %w[
     CALL_DATA
     IC
     IVC
     RB_BUILTIN
-    VALUE
+    attr_index_t
     compile_branch
     compile_status
     inlined_call_context
@@ -558,10 +359,10 @@ generator = BindingGenerator.new(
     rb_callable_method_entry_struct
     rb_callcache
     rb_callinfo
-    rb_cref_t
     rb_control_frame_t
-    rb_execution_context_t
+    rb_cref_t
     rb_execution_context_struct
+    rb_execution_context_t
     rb_iseq_constant_body
     rb_iseq_location_t
     rb_iseq_struct
@@ -574,8 +375,15 @@ generator = BindingGenerator.new(
     rb_mjit_unit
     rb_serial_t
     shape_id_t
-    attr_index_t
   ],
+  dynamic_types: %w[
+    VALUE
+  ],
+  skip_fields: {
+    'rb_execution_context_struct.machine': %w[regs], # differs between macOS and Linux
+    rb_execution_context_struct: %w[method_missing_reason], # non-leading bit fields not supported
+    rb_iseq_constant_body: %w[yjit_payload], # conditionally defined
+  },
   ruby_fields: {
     rb_iseq_location_struct: %w[
       base_label
@@ -587,4 +395,4 @@ generator = BindingGenerator.new(
 )
 generator.generate(nodes)
 
-File.write(File.join(src_dir, "lib/mjit/c_#{arch_bits}.rb"), generator.src)
+File.write(src_path, generator.src)

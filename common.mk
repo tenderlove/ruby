@@ -236,7 +236,7 @@ main: $(SHOWFLAGS) exts $(ENCSTATIC:static=lib)encs
 
 main: $(srcdir)/lib/mjit/instruction.rb
 srcs: $(srcdir)/lib/mjit/instruction.rb
-$(srcdir)/lib/mjit/instruction.rb: $(tooldir)/ruby_vm/views/lib/mjit/instruction.rb.erb $(srcdir)/insns.def
+$(srcdir)/lib/mjit/instruction.rb: $(tooldir)/insns2vm.rb $(tooldir)/ruby_vm/views/lib/mjit/instruction.rb.erb $(srcdir)/insns.def
 	$(ECHO) generating $@
 	$(Q) $(BASERUBY) -Ku $(tooldir)/insns2vm.rb --basedir="$(srcdir)" $(INSNS2VMOPT) $@
 
@@ -1095,6 +1095,7 @@ BUILTIN_RB_SRCS = \
 		$(srcdir)/io.rb \
 		$(srcdir)/marshal.rb \
 		$(srcdir)/mjit.rb \
+		$(srcdir)/mjit_c.rb \
 		$(srcdir)/mjit_compiler.rb \
 		$(srcdir)/pack.rb \
 		$(srcdir)/trace_point.rb \
@@ -9371,6 +9372,7 @@ miniinit.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 miniinit.$(OBJEXT): $(CCAN_DIR)/list/list.h
 miniinit.$(OBJEXT): $(CCAN_DIR)/str/str.h
 miniinit.$(OBJEXT): $(hdrdir)/ruby/ruby.h
+miniinit.$(OBJEXT): $(srcdir)/mjit_c.rb
 miniinit.$(OBJEXT): $(top_srcdir)/internal/array.h
 miniinit.$(OBJEXT): $(top_srcdir)/internal/compilers.h
 miniinit.$(OBJEXT): $(top_srcdir)/internal/gc.h
@@ -9564,6 +9566,7 @@ miniinit.$(OBJEXT): {$(VPATH)}miniinit.c
 miniinit.$(OBJEXT): {$(VPATH)}miniprelude.c
 miniinit.$(OBJEXT): {$(VPATH)}missing.h
 miniinit.$(OBJEXT): {$(VPATH)}mjit.rb
+miniinit.$(OBJEXT): {$(VPATH)}mjit_c.rb
 miniinit.$(OBJEXT): {$(VPATH)}mjit_compiler.rb
 miniinit.$(OBJEXT): {$(VPATH)}nilclass.rb
 miniinit.$(OBJEXT): {$(VPATH)}node.h
@@ -9821,6 +9824,7 @@ mjit_compiler.$(OBJEXT): $(CCAN_DIR)/list/list.h
 mjit_compiler.$(OBJEXT): $(CCAN_DIR)/str/str.h
 mjit_compiler.$(OBJEXT): $(hdrdir)/ruby.h
 mjit_compiler.$(OBJEXT): $(hdrdir)/ruby/ruby.h
+mjit_compiler.$(OBJEXT): $(srcdir)/mjit_c.rb
 mjit_compiler.$(OBJEXT): $(top_srcdir)/internal/array.h
 mjit_compiler.$(OBJEXT): $(top_srcdir)/internal/class.h
 mjit_compiler.$(OBJEXT): $(top_srcdir)/internal/compile.h
@@ -10001,6 +10005,8 @@ mjit_compiler.$(OBJEXT): {$(VPATH)}iseq.h
 mjit_compiler.$(OBJEXT): {$(VPATH)}method.h
 mjit_compiler.$(OBJEXT): {$(VPATH)}missing.h
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit.h
+mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_c.rb
+mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_c.rbinc
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_compile_attr.inc
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_compiler.c
 mjit_compiler.$(OBJEXT): {$(VPATH)}mjit_compiler.h

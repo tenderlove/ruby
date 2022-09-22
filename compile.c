@@ -8654,6 +8654,17 @@ compile_op_asgn2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node
       lfin:       # o ?
       pop       # o
 
+      # or (popped)
+      if lcfin  # r
+      eval v    # r v
+      send a=   # ?
+      jump lfin # ?
+
+      lcfin:      # r
+
+      lfin:       # ?
+      pop       #
+
       # and
       dup       # r o o
       unless lcfin
@@ -8682,31 +8693,35 @@ compile_op_asgn2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node
     ADD_SEND_WITH_FLAG(ret, node, vid, INT2FIX(0), INT2FIX(asgnflag));
 
     if (atype == idOROP || atype == idANDOP) {
-        ADD_INSN(ret, node, dup);
+        if (!popped) {
+            ADD_INSN(ret, node, dup);
+        }
         if (atype == idOROP) {
             ADD_INSNL(ret, node, branchif, lcfin);
         }
         else { /* idANDOP */
             ADD_INSNL(ret, node, branchunless, lcfin);
         }
-        ADD_INSN(ret, node, pop);
+        if (!popped) {
+            ADD_INSN(ret, node, pop);
+        }
         CHECK(COMPILE(ret, "NODE_OP_ASGN2 val", node->nd_value));
-        ADD_INSN(ret, node, swap);
-        ADD_INSN1(ret, node, topn, INT2FIX(1));
+        if (!popped) {
+            ADD_INSN(ret, node, swap);
+            ADD_INSN1(ret, node, topn, INT2FIX(1));
+        }
         ADD_SEND_WITH_FLAG(ret, node, aid, INT2FIX(1), INT2FIX(asgnflag));
         ADD_INSNL(ret, node, jump, lfin);
 
         ADD_LABEL(ret, lcfin);
-        ADD_INSN(ret, node, swap);
+        if (!popped) {
+            ADD_INSN(ret, node, swap);
+        }
 
         ADD_LABEL(ret, lfin);
         ADD_INSN(ret, node, pop);
         if (lskip) {
             ADD_LABEL(ret, lskip);
-        }
-        if (popped) {
-            /* we can apply more optimize */
-            ADD_INSN(ret, node, pop);
         }
     }
     else {
@@ -8822,7 +8837,10 @@ compile_op_log(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
     }
 
     CHECK(COMPILE(ret, "NODE_OP_ASGN_AND/OR#nd_head", node->nd_head));
-    ADD_INSN(ret, node, dup);
+
+    if (!popped) {
+        ADD_INSN(ret, node, dup);
+    }
 
     if (type == NODE_OP_ASGN_AND) {
         ADD_INSNL(ret, node, branchunless, lfin);
@@ -8831,15 +8849,13 @@ compile_op_log(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
         ADD_INSNL(ret, node, branchif, lfin);
     }
 
-    ADD_INSN(ret, node, pop);
-    ADD_LABEL(ret, lassign);
-    CHECK(COMPILE(ret, "NODE_OP_ASGN_AND/OR#nd_value", node->nd_value));
-    ADD_LABEL(ret, lfin);
-
-    if (popped) {
-        /* we can apply more optimize */
+    if (!popped) {
         ADD_INSN(ret, node, pop);
     }
+
+    ADD_LABEL(ret, lassign);
+    CHECK(COMPILE_(ret, "NODE_OP_ASGN_AND/OR#nd_value", node->nd_value, popped));
+    ADD_LABEL(ret, lfin);
     return COMPILE_OK;
 }
 
