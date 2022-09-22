@@ -377,7 +377,7 @@ module RubyVM::MJIT
         else
           if ic_copy.attr_index == 0 # cache hit, but uninitialized iv
             src << "    /* Uninitialized instance variable */\n"
-            src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj))) {\n"
+            src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj)) {\n"
             src << "        stack[#{stack_size}] = Qnil;\n"
             src << "    }\n"
           else
