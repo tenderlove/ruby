@@ -380,10 +380,10 @@ generator = BindingGenerator.new(
     rb_mjit_compile_info
     rb_mjit_unit
     rb_serial_t
-    shape_id_t
   ],
   dynamic_types: %w[
     VALUE
+    shape_id_t
   ],
   skip_fields: {
     'rb_execution_context_struct.machine': %w[regs], # differs between macOS and Linux

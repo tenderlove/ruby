@@ -589,12 +589,12 @@ module RubyVM::MJIT
     @rb_serial_t ||= CType::Immediate.parse("unsigned long long")
   end
 
-  def C.shape_id_t
-    @shape_id_t ||= CType::Immediate.parse("uint32_t")
-  end
-
   def C.VALUE
     @VALUE ||= CType::Immediate.find(Primitive.cexpr!("SIZEOF(VALUE)"), Primitive.cexpr!("SIGNED_TYPE_P(VALUE)"))
+  end
+
+  def C.shape_id_t
+    @shape_id_t ||= CType::Immediate.find(Primitive.cexpr!("SIZEOF(shape_id_t)"), Primitive.cexpr!("SIGNED_TYPE_P(shape_id_t)"))
   end
 
   def C._Bool
