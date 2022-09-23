@@ -329,17 +329,23 @@ generator = BindingGenerator.new(
     USE_LAZY_LOAD
     USE_RVARGC
   ],
-  ints: %w[
-    INVALID_SHAPE_ID
-    NOT_COMPILED_STACK_SIZE
-    SHAPE_MASK
-    VM_CALL_KW_SPLAT
-    VM_CALL_KW_SPLAT_bit
-    VM_CALL_TAILCALL
-    VM_CALL_TAILCALL_bit
-    VM_METHOD_TYPE_CFUNC
-    VM_METHOD_TYPE_ISEQ
-  ],
+  values: {
+    INT: %w[
+      INVALID_SHAPE_ID
+      NOT_COMPILED_STACK_SIZE
+      SHAPE_MASK
+      VM_CALL_KW_SPLAT
+      VM_CALL_KW_SPLAT_bit
+      VM_CALL_TAILCALL
+      VM_CALL_TAILCALL_bit
+      VM_METHOD_TYPE_CFUNC
+      VM_METHOD_TYPE_ISEQ
+    ],
+    ULONG: %w[
+      INVALID_SHAPE_ID
+      SHAPE_MASK
+    ],
+  },
   types: %w[
     CALL_DATA
     IC
