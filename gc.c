@@ -2930,7 +2930,7 @@ rb_class_instance_allocate_internal(VALUE klass, VALUE flags, bool wb_protected)
 #endif
     }
     else {
-        rb_init_iv_list(obj);
+        rb_ensure_iv_list_size(obj, 0, index_tbl_num_entries);
     }
 
     return obj;
