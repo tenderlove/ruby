@@ -64,7 +64,7 @@ shape_id_t
 rb_shape_get_shape_id(VALUE obj)
 {
     if (RB_SPECIAL_CONST_P(obj)) {
-        return SHAPE_ID(rb_shape_get_frozen_root_shape());
+        return FROZEN_ROOT_SHAPE_ID;
     }
 
 #if SHAPE_IN_BASIC_FLAGS

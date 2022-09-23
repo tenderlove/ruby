@@ -1518,12 +1518,6 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
               RCLASS_EXT(obj)->shape_id = shape_id;
               break;
           }
-      case T_IMEMO:
-          if (imemo_type(obj) == imemo_shape) {
-              RBASIC(obj)->flags &= 0xffffffff0000ffff;
-              RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
-          }
-          break;
       default:
           {
               if (shape_id != FROZEN_ROOT_SHAPE_ID) {
