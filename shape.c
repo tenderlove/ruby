@@ -31,7 +31,6 @@ rb_shape_get_shape_by_id(shape_id_t shape_id)
 
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = &vm->shape_list[shape_id];
-    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     return shape;
 }
 
@@ -43,12 +42,6 @@ rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id)
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = &vm->shape_list[shape_id];
     return shape;
-}
-
-static inline shape_id_t
-shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
-    VALUE flags = shape->flags & ~((uint64_t)SHAPE_MASK << 16);
-    return (shape_id_t)(shape->flags = (flags | ((VALUE)id << SHAPE_FLAG_SHIFT)));
 }
 
 #if !SHAPE_IN_BASIC_FLAGS
@@ -65,7 +58,7 @@ shape_id_t
 rb_shape_get_shape_id(VALUE obj)
 {
     if (RB_SPECIAL_CONST_P(obj)) {
-        return SHAPE_ID(rb_shape_get_frozen_root_shape());
+        return rb_shape_get_frozen_root_shape()->id;
     }
 
 #if SHAPE_IN_BASIC_FLAGS
@@ -278,8 +271,7 @@ shape_alloc(void)
     }
 
     rb_shape_t *shape = &GET_VM()->shape_list[shape_id];
-    ((struct RBasic *)shape)->flags = T_IMEMO | (imemo_shape << FL_USHIFT);
-    shape_set_shape_id(shape, shape_id);
+    shape->id = shape_id;
     return shape;
 }
 
@@ -292,15 +284,12 @@ rb_shape_alloc(ID edge_name, rb_shape_t * parent)
     shape->iv_count = 0;
     shape->parent = parent;
 
-    RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
-
     return shape;
 }
 
 MJIT_FUNC_EXPORTED void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
-    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     rb_shape_set_shape_id(obj, SHAPE_ID(shape));
 }
 

@@ -42,10 +42,10 @@ typedef uint16_t shape_id_t;
 # define ROOT_SHAPE_ID 0x0
 # define FROZEN_ROOT_SHAPE_ID 0x1
 
-#define SHAPE_ID(shape) ((((rb_shape_t *)shape)->flags >> SHAPE_FLAG_SHIFT) & SHAPE_MASK)
+#define SHAPE_ID(shape) (shape->id)
 
 struct rb_shape {
-    VALUE flags; // Shape ID and frozen status encoded within flags
+    shape_id_t id;
     struct rb_shape * parent; // Pointer to the parent
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape

@@ -2971,7 +2971,6 @@ rb_imemo_name(enum imemo_type type)
         IMEMO_NAME(callinfo);
         IMEMO_NAME(callcache);
         IMEMO_NAME(constcache);
-        IMEMO_NAME(shape);
 #undef IMEMO_NAME
     }
     return "unknown";
@@ -3018,11 +3017,6 @@ imemo_memsize(VALUE obj)
       case imemo_iseq:
         size += rb_iseq_memsize((rb_iseq_t *)obj);
         break;
-      case imemo_shape:
-        {
-            rb_bug("shape shouldn't be in GC");
-            break;
-        }
       case imemo_env:
         size += RANY(obj)->as.imemo.env.env_size * sizeof(VALUE);
         break;
@@ -3726,11 +3720,6 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
           case imemo_constcache:
             RB_DEBUG_COUNTER_INC(obj_imemo_constcache);
             break;
-          case imemo_shape:
-            {
-                rb_bug("shape shouldn't be in GC");
-                break;
-            }
 	}
 	return TRUE;
 
@@ -6302,10 +6291,6 @@ push_mark_stack(mark_stack_t *stack, VALUE data)
 {
     VALUE obj = data;
     switch (BUILTIN_TYPE(obj)) {
-      case T_IMEMO:
-          if (imemo_type(obj) == imemo_shape) {
-              rb_bug("no shapes in GC!");
-          }
       case T_OBJECT:
       case T_CLASS:
       case T_MODULE:
@@ -6324,6 +6309,7 @@ push_mark_stack(mark_stack_t *stack, VALUE data)
       case T_TRUE:
       case T_FALSE:
       case T_SYMBOL:
+      case T_IMEMO:
       case T_ICLASS:
         if (stack->index == stack->limit) {
             push_mark_stack_chunk(stack);
@@ -7162,11 +7148,6 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
         {
             const struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)obj;
             gc_mark(objspace, ice->value);
-        }
-        return;
-      case imemo_shape:
-        {
-            rb_bug("shape shouldn't be in GC");
         }
         return;
 #if VM_CHECK_MODE > 0
@@ -9773,9 +9754,6 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_IMEMO:
-        if (IMEMO_TYPE_P(obj, imemo_shape)) {
-            rb_bug("no shapes in gc");
-        }
       case T_NONE:
       case T_NIL:
       case T_MOVED:
@@ -10291,11 +10269,6 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_parser_strterm:
       case imemo_tmpbuf:
       case imemo_callinfo:
-        break;
-      case imemo_shape:
-        {
-            rb_bug("shape shouldn't be in GC");
-        }
         break;
       default:
         rb_bug("not reachable %d", imemo_type(obj));
