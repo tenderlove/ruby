@@ -142,10 +142,9 @@ rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);
 MJIT_SYMBOL_EXPORT_END
 
-rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent);
+rb_shape_t * rb_shape_alloc(ID edge_name, rb_shape_t * parent);
 
 bool rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id);
-void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
 
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj);
 VALUE rb_shape_flags_mask(void);

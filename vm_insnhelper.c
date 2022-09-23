@@ -1097,12 +1097,10 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
     if (is_attr) {
         if (vm_cc_markable(cc)) {
             vm_cc_attr_index_set(cc, index, shape_id, shape_id);
-            RB_OBJ_WRITTEN(cc, Qundef, rb_shape_get_shape_by_id(shape_id));
         }
     }
     else {
         vm_ic_attr_index_set(iseq, ic, index, shape_id, shape_id);
-        RB_OBJ_WRITTEN(iseq, Qundef, rb_shape_get_shape_by_id(shape_id));
     }
 }
 
@@ -1244,14 +1242,10 @@ populate_cache(attr_index_t index, rb_shape_t *shape, rb_shape_t *next_shape, ID
     if (is_attr) {
         if (vm_cc_markable(cc)) {
             vm_cc_attr_index_set(cc, index, SHAPE_ID(shape), SHAPE_ID(next_shape));
-            RB_OBJ_WRITTEN(cc, Qundef, (VALUE)shape);
-            RB_OBJ_WRITTEN(cc, Qundef, (VALUE)next_shape);
         }
     }
     else {
         vm_ic_attr_index_set(iseq, ic, index, SHAPE_ID(shape), SHAPE_ID(next_shape));
-        RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)shape);
-        RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
     }
 }
 
@@ -1362,11 +1356,9 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shap
 #else
             ivtbl->shape_id = dest_shape_id;
 #endif
-            RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
         }
         else {
             // Just get the IV table
-            RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
             rb_gen_ivtbl_get(obj, 0, &ivtbl);
         }
 
@@ -1407,9 +1399,6 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t d
                             rb_init_iv_list(obj);
                         }
                         ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
-                    }
-                    else {
-                        RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
                     }
 
                     RUBY_ASSERT(index < ROBJECT_NUMIV(obj));

@@ -1319,10 +1319,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
             rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(id));
         }
 
-        if (!st_update(generic_ivtbl(obj, id, false), (st_data_t)obj, generic_ivar_update,
-                  (st_data_t)&ivup)) {
-            RB_OBJ_WRITTEN(obj, Qundef, shape);
-        }
+        st_update(generic_ivtbl(obj, id, false), (st_data_t)obj, generic_ivar_update, (st_data_t)&ivup);
     }
     RB_VM_LOCK_LEAVE();
 
