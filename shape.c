@@ -14,6 +14,12 @@ rb_shape_get_root_shape(void) {
     return GET_VM()->root_shape;
 }
 
+shape_id_t
+SHAPE_ID(rb_shape_t * shape)
+{
+    return (shape_id_t)(shape - GET_VM()->shape_list);
+}
+
 static rb_shape_t*
 rb_shape_get_frozen_root_shape(void) {
     return GET_VM()->frozen_root_shape;
@@ -58,7 +64,7 @@ shape_id_t
 rb_shape_get_shape_id(VALUE obj)
 {
     if (RB_SPECIAL_CONST_P(obj)) {
-        return rb_shape_get_frozen_root_shape()->id;
+        return SHAPE_ID(rb_shape_get_frozen_root_shape());
     }
 
 #if SHAPE_IN_BASIC_FLAGS
@@ -131,9 +137,6 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum shape_type sha
                 new_shape->type = (uint8_t)shape_type;
 
                 switch(shape_type) {
-                    case SHAPE_FROZEN:
-                        RB_OBJ_FREEZE_RAW((VALUE)new_shape);
-                        break;
                     case SHAPE_IVAR:
                         new_shape->iv_count = new_shape->parent->iv_count + 1;
 
@@ -150,6 +153,8 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum shape_type sha
                         break;
                     case SHAPE_ROOT:
                         rb_bug("Unreachable");
+                        break;
+                    case SHAPE_FROZEN:
                         break;
                 }
 
@@ -270,9 +275,7 @@ shape_alloc(void)
         rb_bug("Out of shapes\n");
     }
 
-    rb_shape_t *shape = &GET_VM()->shape_list[shape_id];
-    shape->id = shape_id;
-    return shape;
+    return &GET_VM()->shape_list[shape_id];
 }
 
 rb_shape_t *

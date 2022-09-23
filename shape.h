@@ -42,10 +42,7 @@ typedef uint16_t shape_id_t;
 # define ROOT_SHAPE_ID 0x0
 # define FROZEN_ROOT_SHAPE_ID 0x1
 
-#define SHAPE_ID(shape) (shape->id)
-
 struct rb_shape {
-    shape_id_t id;
     struct rb_shape * parent; // Pointer to the parent
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
@@ -61,6 +58,8 @@ enum shape_type {
     SHAPE_FROZEN,
     SHAPE_IVAR_UNDEF,
 };
+
+shape_id_t SHAPE_ID(rb_shape_t * shape);
 
 static inline shape_id_t
 IMEMO_CACHED_SHAPE_ID(VALUE cc)
