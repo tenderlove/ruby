@@ -130,10 +130,10 @@ class BindingGenerator
       println
     end
 
-    # Define int macros/enums
+    # Define integer macros/enums
     @ints.each do |int|
       println "  def C.#{int}"
-      println "    Primitive.cexpr! %q{ INT2NUM(#{int}) }"
+      println "    Primitive.cexpr! %q{ LONG2NUM(#{int}) }"
       println "  end"
       println
     end

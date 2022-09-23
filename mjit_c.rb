@@ -137,39 +137,39 @@ module RubyVM::MJIT
   end
 
   def C.INVALID_SHAPE_ID
-    Primitive.cexpr! %q{ INT2NUM(INVALID_SHAPE_ID) }
+    Primitive.cexpr! %q{ LONG2NUM(INVALID_SHAPE_ID) }
   end
 
   def C.NOT_COMPILED_STACK_SIZE
-    Primitive.cexpr! %q{ INT2NUM(NOT_COMPILED_STACK_SIZE) }
+    Primitive.cexpr! %q{ LONG2NUM(NOT_COMPILED_STACK_SIZE) }
   end
 
   def C.SHAPE_MASK
-    Primitive.cexpr! %q{ INT2NUM(SHAPE_MASK) }
+    Primitive.cexpr! %q{ LONG2NUM(SHAPE_MASK) }
   end
 
   def C.VM_CALL_KW_SPLAT
-    Primitive.cexpr! %q{ INT2NUM(VM_CALL_KW_SPLAT) }
+    Primitive.cexpr! %q{ LONG2NUM(VM_CALL_KW_SPLAT) }
   end
 
   def C.VM_CALL_KW_SPLAT_bit
-    Primitive.cexpr! %q{ INT2NUM(VM_CALL_KW_SPLAT_bit) }
+    Primitive.cexpr! %q{ LONG2NUM(VM_CALL_KW_SPLAT_bit) }
   end
 
   def C.VM_CALL_TAILCALL
-    Primitive.cexpr! %q{ INT2NUM(VM_CALL_TAILCALL) }
+    Primitive.cexpr! %q{ LONG2NUM(VM_CALL_TAILCALL) }
   end
 
   def C.VM_CALL_TAILCALL_bit
-    Primitive.cexpr! %q{ INT2NUM(VM_CALL_TAILCALL_bit) }
+    Primitive.cexpr! %q{ LONG2NUM(VM_CALL_TAILCALL_bit) }
   end
 
   def C.VM_METHOD_TYPE_CFUNC
-    Primitive.cexpr! %q{ INT2NUM(VM_METHOD_TYPE_CFUNC) }
+    Primitive.cexpr! %q{ LONG2NUM(VM_METHOD_TYPE_CFUNC) }
   end
 
   def C.VM_METHOD_TYPE_ISEQ
-    Primitive.cexpr! %q{ INT2NUM(VM_METHOD_TYPE_ISEQ) }
+    Primitive.cexpr! %q{ LONG2NUM(VM_METHOD_TYPE_ISEQ) }
   end
 
   def C.CALL_DATA
