@@ -59,7 +59,7 @@ enum shape_type {
     SHAPE_IVAR_UNDEF,
 };
 
-shape_id_t SHAPE_IDJ(rb_shape_t * shape);
+shape_id_t SHAPE_ID(rb_shape_t * shape);
 
 static inline shape_id_t
 IMEMO_CACHED_SHAPE_ID(VALUE cc)

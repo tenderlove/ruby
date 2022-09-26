@@ -3767,23 +3767,44 @@ AS_CASE(["${YJIT_SUPPORT}"],
     ],
     [dev], [
 	rb_rust_target_subdir=debug
-	CARGO_BUILD_ARGS='--features stats,disasm,asm_comments'
+        CARGO_BUILD_ARGS='--features disasm,asm_comments'
 	AC_DEFINE(RUBY_DEBUG, 1)
     ],
     [dev_nodebug], [
 	rb_rust_target_subdir=dev_nodebug
-	CARGO_BUILD_ARGS='--profile dev_nodebug --features stats,disasm,asm_comments'
+        CARGO_BUILD_ARGS='--profile dev_nodebug --features disasm,asm_comments'
     ],
     [stats], [
 	rb_rust_target_subdir=stats
-	CARGO_BUILD_ARGS='--profile stats --features stats'
+        CARGO_BUILD_ARGS='--profile stats'
     ])
 
     AS_IF([test -n "${CARGO_BUILD_ARGS}"], [
-             AC_CHECK_TOOL(CARGO, [cargo], [no])
-             AS_IF([test x"$CARGO" = "xno"],
-                AC_MSG_ERROR([cargo is required. Installation instructions available at https://www.rust-lang.org/tools/install])
-             ]))
+        AC_CHECK_TOOL(CARGO, [cargo], [no])
+        AS_IF([test x"$CARGO" = "xno"],
+            AC_MSG_ERROR([cargo is required. Installation instructions available at https://www.rust-lang.org/tools/install])
+        ])
+
+        # Insn::IncrCounter uses ldaddal, which works only on ARMv8.1+.
+        AC_CACHE_CHECK(yjit stats are broken, rb_cv_broken_yjit_stats, [
+            AC_RUN_IFELSE(
+                [AC_LANG_PROGRAM([[]], [[
+                    @%:@ifdef __aarch64__
+                        asm volatile(".arch armv8-a+lse\n"
+                                     "ldaddal xzr, xzr, @<:@sp@:>@");
+                    @%:@endif
+                ]])],
+                [rb_cv_broken_yjit_stats=no],
+                [rb_cv_broken_yjit_stats=yes],
+                [rb_cv_broken_yjit_stats=yes]
+            )
+        ])
+        # This won't enable stats in release builds because we don't use cargo
+        # for release builds, use rustc directly
+        AS_IF([test "$rb_cv_broken_yjit_stats" = no], [
+            CARGO_BUILD_ARGS="${CARGO_BUILD_ARGS} --features stats"
+        ])
+    )
 
     YJIT_LIBS="yjit/target/${rb_rust_target_subdir}/libyjit.a"
     AS_CASE(["$target_os"],[openbsd*],[
@@ -4366,6 +4387,14 @@ AC_SUBST(XCC_WRAPPER)
 
 AS_CASE([" $CPP "], [*" $CC "*], [CPP=`echo " $CPP " | sed "s| $CC |"' $(CC) |;s/^ *//;s/  *$//'`])
 
+AS_IF([test ! -f "$srcdir/revision.h"], [
+    AS_IF([test "x$HAVE_BASERUBY" = xyes], [
+	${BASERUBY} -C "$srcdir" tool/file2lastrev.rb -q --revision.h > "$srcdir/revision.h"
+    ], [
+	touch "$srcdir/revision.h"
+    ])
+])
+
 AS_IF([test x"$firstmf" != x], [
     AC_CONFIG_FILES($firstmf:$firsttmpl, [], [firstmf="$firstmf" firsttmpl="$firsttmpl"])
 ])
@@ -4382,12 +4411,15 @@ AC_CONFIG_FILES(Makefile:template/Makefile.in, [
 	AS_CASE("$VCS",
 		['$(GIT)'|git], [VCSUP='$(VCS) pull --rebase $(GITPULLOPTIONS)'],
 		[VCSUP='$(VCS)'])
-	sed -n \
-	    -e '[/^@%:@define \(RUBY_RELEASE_[A-Z]*\) \([0-9][0-9]*\)/]{' \
-	    -e   's//\1 = \2/' \
-	    -e   '[s/ \([0-9]\)$/ 0\1/]' \
-	    -e   p \
-	    -e '}' "$srcdir/version.h"
+	for f in "$srcdir/version.h" "$srcdir/revision.h"; do
+            test -f "$f" || continue
+	    sed -n \
+	        -e '[/^@%:@define \(RUBY_RELEASE_[A-Z]*\) \([0-9][0-9]*\)/]{' \
+	        -e   's//\1 = \2/' \
+	        -e   '[s/ \([0-9]\)$/ 0\1/]' \
+	        -e   p \
+	        -e '}' "$f"
+        done
 	sed '/^MISSING/s/\$U\././g;/^VCS *=/s#@VCS@#'"$VCS"'#;/^VCSUP *=/s#@VCSUP@#'"$VCSUP"'#' Makefile
 	echo; test x"$EXEEXT" = x || echo 'miniruby: miniruby$(EXEEXT)'
 	AS_IF([test "$gnumake" != yes], [

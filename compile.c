@@ -766,7 +766,7 @@ rb_iseq_compile_node(rb_iseq_t *iseq, const NODE *node)
                 end->rescued = LABEL_RESCUE_END;
 
                 ADD_TRACE(ret, RUBY_EVENT_B_CALL);
-                NODE dummy_line_node = generate_dummy_line_node(FIX2INT(ISEQ_BODY(iseq)->location.first_lineno), -1);
+                NODE dummy_line_node = generate_dummy_line_node(ISEQ_BODY(iseq)->location.first_lineno, -1);
                 ADD_INSN (ret, &dummy_line_node, nop);
                 ADD_LABEL(ret, start);
                 CHECK(COMPILE(ret, "block body", node->nd_body));
@@ -1333,7 +1333,7 @@ new_child_iseq(rb_iseq_t *iseq, const NODE *const node,
     int isolated_depth = ISEQ_COMPILE_DATA(iseq)->isolated_depth;
     ret_iseq = rb_iseq_new_with_opt(&ast, name,
                                     rb_iseq_path(iseq), rb_iseq_realpath(iseq),
-                                    INT2FIX(line_no), parent,
+                                    line_no, parent,
                                     isolated_depth ? isolated_depth + 1 : 0,
                                     type, ISEQ_COMPILE_DATA(iseq)->option);
     debugs("[new_child_iseq]< ---------------------------------------\n");
@@ -1349,7 +1349,7 @@ new_child_iseq_with_callback(rb_iseq_t *iseq, const struct rb_iseq_new_with_call
     debugs("[new_child_iseq_with_callback]> ---------------------------------------\n");
     ret_iseq = rb_iseq_new_with_callback(ifunc, name,
                                  rb_iseq_path(iseq), rb_iseq_realpath(iseq),
-                                 INT2FIX(line_no), parent, type, ISEQ_COMPILE_DATA(iseq)->option);
+                                 line_no, parent, type, ISEQ_COMPILE_DATA(iseq)->option);
     debugs("[new_child_iseq_with_callback]< ---------------------------------------\n");
     return ret_iseq;
 }
@@ -2459,7 +2459,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                             generated_iseq[code_index + 1 + j] = (VALUE)ic;
                         }
                         break;
-		      case TS_IVC: /* inline ivar cache */
+                      case TS_IVC: /* inline ivar cache */
                         {
                             unsigned int ic_index = FIX2UINT(operands[j]);
                             vm_ic_attr_index_initialize(((IVC)&body->is_entries[ic_index]), INVALID_SHAPE_ID);
@@ -8222,7 +8222,7 @@ compile_builtin_mandatory_only_method(rb_iseq_t *iseq, const NODE *node, const N
     ISEQ_BODY(iseq)->mandatory_only_iseq =
       rb_iseq_new_with_opt(&ast, rb_iseq_base_label(iseq),
                            rb_iseq_path(iseq), rb_iseq_realpath(iseq),
-                           INT2FIX(nd_line(line_node)), NULL, 0,
+                           nd_line(line_node), NULL, 0,
                            ISEQ_TYPE_METHOD, ISEQ_COMPILE_DATA(iseq)->option);
 
     GET_VM()->builtin_inline_index = prev_inline_index;
@@ -8719,10 +8719,6 @@ compile_op_asgn2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node
         }
 
         ADD_LABEL(ret, lfin);
-        ADD_INSN(ret, node, pop);
-        if (lskip) {
-            ADD_LABEL(ret, lskip);
-        }
     }
     else {
         CHECK(COMPILE(ret, "NODE_OP_ASGN2 val", node->nd_value));
@@ -8732,13 +8728,13 @@ compile_op_asgn2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node
             ADD_INSN1(ret, node, topn, INT2FIX(1));
         }
         ADD_SEND_WITH_FLAG(ret, node, aid, INT2FIX(1), INT2FIX(asgnflag));
-        if (lskip && popped) {
-            ADD_LABEL(ret, lskip);
-        }
-        ADD_INSN(ret, node, pop);
-        if (lskip && !popped) {
-            ADD_LABEL(ret, lskip);
-        }
+    }
+    if (lskip && popped) {
+        ADD_LABEL(ret, lskip);
+    }
+    ADD_INSN(ret, node, pop);
+    if (lskip && !popped) {
+        ADD_LABEL(ret, lskip);
     }
     return COMPILE_OK;
 }
@@ -12131,7 +12127,7 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
     const VALUE location_pathobj_index = ibf_load_small_value(load, &reading_pos);
     const VALUE location_base_label_index = ibf_load_small_value(load, &reading_pos);
     const VALUE location_label_index = ibf_load_small_value(load, &reading_pos);
-    const VALUE location_first_lineno = ibf_load_small_value(load, &reading_pos);
+    const int location_first_lineno = (int)ibf_load_small_value(load, &reading_pos);
     const int location_node_id = (int)ibf_load_small_value(load, &reading_pos);
     const int location_code_location_beg_pos_lineno = (int)ibf_load_small_value(load, &reading_pos);
     const int location_code_location_beg_pos_column = (int)ibf_load_small_value(load, &reading_pos);

@@ -2797,26 +2797,32 @@ rb_str_sublen(VALUE str, long pos)
     }
 }
 
-VALUE
-rb_str_subseq(VALUE str, long beg, long len)
+static VALUE
+str_subseq(VALUE str, long beg, long len)
 {
     VALUE str2;
 
     if (!STR_EMBEDDABLE_P(len, TERM_LEN(str)) &&
-        SHARABLE_SUBSTRING_P(beg, len, RSTRING_LEN(str))) {
-        long olen;
-        str2 = rb_str_new_shared(rb_str_new_frozen_String(str));
+            SHARABLE_SUBSTRING_P(beg, len, RSTRING_LEN(str))) {
+        str2 = rb_str_new_shared(str);
         RSTRING(str2)->as.heap.ptr += beg;
-        olen = RSTRING(str2)->as.heap.len;
-        if (olen > len) RSTRING(str2)->as.heap.len = len;
+        if (RSTRING(str2)->as.heap.len > len) {
+            RSTRING(str2)->as.heap.len = len;
+        }
     }
     else {
-        str2 = rb_str_new(RSTRING_PTR(str)+beg, len);
+        str2 = rb_str_new(RSTRING_PTR(str) + beg, len);
         RB_GC_GUARD(str);
     }
 
-    rb_enc_cr_str_copy_for_substr(str2, str);
+    return str2;
+}
 
+VALUE
+rb_str_subseq(VALUE str, long beg, long len)
+{
+    VALUE str2 = str_subseq(str, beg, len);
+    rb_enc_cr_str_copy_for_substr(str2, str);
     return str2;
 }
 
@@ -2916,26 +2922,15 @@ rb_str_substr(VALUE str, long beg, long len)
 static VALUE
 str_substr(VALUE str, long beg, long len, int empty)
 {
-    VALUE str2;
     char *p = rb_str_subpos(str, beg, &len);
 
     if (!p) return Qnil;
-    if (!STR_EMBEDDABLE_P(len, TERM_LEN(str)) &&
-        SHARABLE_SUBSTRING_P(p, len, RSTRING_END(str))) {
-        long ofs = p - RSTRING_PTR(str);
-        str2 = rb_str_new_frozen(str);
-        str2 = str_new_shared(rb_cString, str2);
-        RSTRING(str2)->as.heap.ptr += ofs;
-        RSTRING(str2)->as.heap.len = len;
-        ENC_CODERANGE_CLEAR(str2);
-    }
-    else {
-        if (!len && !empty) return Qnil;
-        str2 = rb_str_new(p, len);
-        RB_GC_GUARD(str);
-    }
-    rb_enc_cr_str_copy_for_substr(str2, str);
+    if (!len && !empty) return Qnil;
 
+    beg = p - RSTRING_PTR(str);
+
+    VALUE str2 = str_subseq(str, beg, len);
+    rb_enc_cr_str_copy_for_substr(str2, str);
     return str2;
 }
 
@@ -6142,9 +6137,7 @@ rb_str_setbyte(VALUE str, VALUE index, VALUE value)
 static VALUE
 str_byte_substr(VALUE str, long beg, long len, int empty)
 {
-    char *p, *s = RSTRING_PTR(str);
     long n = RSTRING_LEN(str);
-    VALUE str2;
 
     if (beg > n || len < 0) return Qnil;
     if (beg < 0) {
@@ -6156,20 +6149,9 @@ str_byte_substr(VALUE str, long beg, long len, int empty)
     if (len <= 0) {
         if (!empty) return Qnil;
         len = 0;
-        p = 0;
     }
-    else
-        p = s + beg;
 
-    if (!STR_EMBEDDABLE_P(len, TERM_LEN(str)) && SHARABLE_SUBSTRING_P(beg, len, n)) {
-        str2 = rb_str_new_frozen(str);
-        str2 = str_new_shared(rb_cString, str2);
-        RSTRING(str2)->as.heap.ptr += beg;
-        RSTRING(str2)->as.heap.len = len;
-    }
-    else {
-        str2 = rb_str_new(p, len);
-    }
+    VALUE str2 = str_subseq(str, beg, len);
 
     str_enc_copy(str2, str);
 
@@ -10771,20 +10753,22 @@ rb_str_b(VALUE str)
     }
     str_replace_shared_without_enc(str2, str);
 
-    // BINARY strings can never be broken; they're either 7-bit ASCII or VALID.
-    // If we know the receiver's code range then we know the result's code range.
-    int cr = ENC_CODERANGE(str);
-    switch (cr) {
-      case ENC_CODERANGE_7BIT:
-        ENC_CODERANGE_SET(str2, ENC_CODERANGE_7BIT);
-        break;
-      case ENC_CODERANGE_BROKEN:
-      case ENC_CODERANGE_VALID:
-        ENC_CODERANGE_SET(str2, ENC_CODERANGE_VALID);
-        break;
-      default:
-        ENC_CODERANGE_CLEAR(str2);
-        break;
+    if (rb_enc_asciicompat(STR_ENC_GET(str))) {
+        // BINARY strings can never be broken; they're either 7-bit ASCII or VALID.
+        // If we know the receiver's code range then we know the result's code range.
+        int cr = ENC_CODERANGE(str);
+        switch (cr) {
+          case ENC_CODERANGE_7BIT:
+            ENC_CODERANGE_SET(str2, ENC_CODERANGE_7BIT);
+            break;
+          case ENC_CODERANGE_BROKEN:
+          case ENC_CODERANGE_VALID:
+            ENC_CODERANGE_SET(str2, ENC_CODERANGE_VALID);
+            break;
+          default:
+            ENC_CODERANGE_CLEAR(str2);
+            break;
+        }
     }
 
     return str2;
