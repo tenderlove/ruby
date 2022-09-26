@@ -273,7 +273,6 @@ pub type attr_index_t = u32;
 pub type shape_id_t = u32;
 #[repr(C)]
 pub struct rb_shape {
-    pub flags: VALUE,
     pub parent: *mut rb_shape,
     pub edges: *mut rb_id_table,
     pub edge_name: ID,
