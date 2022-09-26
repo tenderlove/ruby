@@ -1023,7 +1023,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     *v = (st_data_t)ivtbl;
     ivup->ivtbl = ivtbl;
 #if !SHAPE_IN_BASIC_FLAGS
-    ivtbl->shape_id = SHAPE_ID(ivup->shape);
+    ivtbl->shape_id = RB_SHAPE_ID(ivup->shape);
 #endif
     return ST_CONTINUE;
 }
