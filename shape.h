@@ -59,8 +59,6 @@ enum shape_type {
     SHAPE_IVAR_UNDEF,
 };
 
-shape_id_t RB_SHAPE_ID(rb_shape_t * shape);
-
 static inline shape_id_t
 IMEMO_CACHED_SHAPE_ID(VALUE cc)
 {
@@ -139,6 +137,7 @@ void rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape);
 void rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape);
 rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);
+shape_id_t rb_shape_id(rb_shape_t * shape);
 MJIT_SYMBOL_EXPORT_END
 
 rb_shape_t * rb_shape_alloc(ID edge_name, rb_shape_t * parent);

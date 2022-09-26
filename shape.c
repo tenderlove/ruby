@@ -15,7 +15,7 @@ rb_shape_get_root_shape(void) {
 }
 
 shape_id_t
-RB_SHAPE_ID(rb_shape_t * shape)
+rb_shape_id(rb_shape_t * shape)
 {
     return (shape_id_t)(shape - GET_VM()->shape_list);
 }
@@ -293,7 +293,7 @@ rb_shape_alloc(ID edge_name, rb_shape_t * parent)
 MJIT_FUNC_EXPORTED void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
-    rb_shape_set_shape_id(obj, RB_SHAPE_ID(shape));
+    rb_shape_set_shape_id(obj, rb_shape_id(shape));
 }
 
 VALUE rb_cShape;
@@ -314,10 +314,10 @@ static const rb_data_type_t shape_data_type = {
 };
 
 static VALUE
-rb_shape_id(VALUE self) {
+rb_wrapped_shape_id(VALUE self) {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return INT2NUM(RB_SHAPE_ID(shape));
+    return INT2NUM(rb_shape_id(shape));
 }
 
 static VALUE
@@ -333,7 +333,7 @@ rb_shape_parent_id(VALUE self)
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
     if (shape->parent) {
-        return INT2NUM(RB_SHAPE_ID(shape->parent));
+        return INT2NUM(rb_shape_id(shape->parent));
     }
     else {
         return Qnil;
@@ -460,14 +460,14 @@ static VALUE edges(struct rb_id_table* edges)
 VALUE rb_obj_shape(rb_shape_t* shape) {
     VALUE rb_shape = rb_hash_new();
 
-    rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(RB_SHAPE_ID(shape)));
+    rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(rb_shape_id(shape)));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edges")), edges(shape->edges));
 
     if (shape == rb_shape_get_root_shape()) {
         rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(ROOT_SHAPE_ID));
     }
     else {
-        rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(RB_SHAPE_ID(shape->parent)));
+        rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(rb_shape_id(shape->parent)));
     }
 
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edge_name")), rb_id2str(shape->edge_name));
@@ -513,7 +513,7 @@ Init_shape(void)
     rb_define_method(rb_cShape, "edge_name", rb_shape_edge_name, 0);
     rb_define_method(rb_cShape, "iv_count", rb_shape_iv_count, 0);
     rb_define_method(rb_cShape, "depth", rb_shape_export_depth, 0);
-    rb_define_method(rb_cShape, "id", rb_shape_id, 0);
+    rb_define_method(rb_cShape, "id", rb_wrapped_shape_id, 0);
     rb_define_method(rb_cShape, "type", rb_shape_type, 0);
     rb_define_const(rb_cShape, "SHAPE_ROOT", INT2NUM(SHAPE_ROOT));
     rb_define_const(rb_cShape, "SHAPE_IVAR", INT2NUM(SHAPE_IVAR));
