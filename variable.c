@@ -1044,10 +1044,6 @@ rb_mark_generic_ivar(VALUE obj)
     struct gen_ivtbl *ivtbl;
 
     if (rb_gen_ivtbl_get(obj, 0, &ivtbl)) {
-
-#if !SHAPE_IN_BASIC_FLAGS
-        rb_gc_mark((VALUE)rb_shape_get_shape_by_id(ivtbl->shape_id));
-#endif
 	gen_ivtbl_mark(ivtbl);
     }
 }
