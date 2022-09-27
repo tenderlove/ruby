@@ -37,6 +37,12 @@ class TestShapes < Test::Unit::TestCase
     refute_equal(shape1.id, shape2.id)
   end
 
+  def test_freezing_populates_iv_count
+    obj = Example.new
+    obj.freeze
+    assert_equal 1, RubyVM.debug_shape(obj).iv_count
+  end
+
   def test_iv_index
     example = RemoveAndAdd.new
     shape = RubyVM.debug_shape(example)
