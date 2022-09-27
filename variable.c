@@ -1452,14 +1452,14 @@ rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
     RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
     attr_index_t index;
 
-    // Ensure there is a transition for IVAR +id+
-    rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
-
     // Get the current shape
     rb_shape_t * shape = rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj));
 
     if (!rb_shape_get_iv_index(shape, id, &index)) {
-        rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(id));
+        // Ensure there is a transition for IVAR +id+
+        rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
+        shape = rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj));
+        index = shape->iv_count - 1;
     }
 
     uint32_t len = ROBJECT_NUMIV(obj);
