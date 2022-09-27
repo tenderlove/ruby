@@ -2924,9 +2924,6 @@ rb_class_instance_allocate_internal(VALUE klass, VALUE flags, bool wb_protected)
         GC_ASSERT(capa >= index_tbl_num_entries);
 
         ROBJECT(obj)->numiv = capa;
-        for (size_t i = 0; i < capa; i++) {
-            ROBJECT(obj)->as.ary[i] = Qundef;
-        }
 #endif
     }
     else {
@@ -10010,11 +10007,6 @@ gc_ref_update_object(rb_objspace_t *objspace, VALUE v)
 
         uint32_t capa = (uint32_t)((slot_size - offsetof(struct RObject, as.ary)) / sizeof(VALUE));
         ROBJECT(v)->numiv = capa;
-
-        // Fill end with Qundef
-        for (uint32_t i = numiv; i < capa; i++) {
-            ptr[i] = Qundef;
-        }
     }
 #endif
 
