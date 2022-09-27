@@ -140,6 +140,13 @@ bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);
 shape_id_t rb_shape_id(rb_shape_t * shape);
 MJIT_SYMBOL_EXPORT_END
 
+static inline uint32_t
+ROBJECT_IV_COUNT(VALUE obj)
+{
+    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
+    return rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj))->iv_count;
+}
+
 rb_shape_t * rb_shape_alloc(ID edge_name, rb_shape_t * parent);
 
 bool rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id);

@@ -1767,7 +1767,7 @@ rb_ivar_count(VALUE obj)
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
 	if (rb_shape_get_shape(obj)->iv_count > 0) {
-	    st_index_t i, count, num = ROBJECT_NUMIV(obj);
+	    st_index_t i, count, num = ROBJECT_IV_COUNT(obj);
 	    const VALUE *const ivptr = ROBJECT_IVPTR(obj);
 	    for (i = count = 0; i < num; ++i) {
 		if (ivptr[i] != Qundef) {
