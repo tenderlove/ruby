@@ -1285,7 +1285,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             // Ensure the IV buffer is wide enough to store the IV
             if (UNLIKELY(index >= num_iv)) {
                 RUBY_ASSERT(index == num_iv);
-                rb_init_iv_list(obj);
+                rb_grow_iv_list(obj);
             }
 
             if (shape != next_shape) {
@@ -1407,7 +1407,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t dest_shape_id, attr_index_t i
                 if (shape_id == source_shape_id && dest_shape->edge_name == id && dest_shape->type == SHAPE_IVAR) {
                     RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
                     if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                        rb_init_iv_list(obj);
+                        rb_grow_iv_list(obj);
                     }
 
                     ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);

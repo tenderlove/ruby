@@ -56,6 +56,7 @@ enum shape_type {
     SHAPE_ROOT,
     SHAPE_IVAR,
     SHAPE_FROZEN,
+    SHAPE_CAPACITY_CHANGE,
     SHAPE_IVAR_UNDEF,
 };
 
@@ -108,6 +109,7 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 #endif
 
 bool rb_shape_root_shape_p(rb_shape_t* shape);
+rb_shape_t* rb_shape_get_root_shape(void);
 
 rb_shape_t* rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id);
 
@@ -119,6 +121,8 @@ rb_shape_t* rb_shape_get_shape(VALUE obj);
 int rb_shape_frozen_shape_p(rb_shape_t* shape);
 void rb_shape_transition_shape_frozen(VALUE obj);
 void rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape);
+rb_shape_t* rb_shape_transition_shape_capa(rb_shape_t* shape);
+rb_shape_t* rb_shape_transition_shape_capa_with_id(rb_shape_t* shape, ID id);
 void rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape);
 rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);
