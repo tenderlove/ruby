@@ -138,6 +138,7 @@
 #include "ractor_core.h"
 
 #include "builtin.h"
+#include "shape.h"
 
 #define rb_setjmp(env) RUBY_SETJMP(env)
 #define rb_jmp_buf rb_jmpbuf_t
@@ -746,6 +747,7 @@ typedef struct rb_objspace {
     VALUE next_object_id;
 
     rb_size_pool_t size_pools[SIZE_POOL_COUNT];
+    shape_id_t size_pool_specific_shape_ids[SIZE_POOL_COUNT];
 
     struct {
         rb_atomic_t finalizing;
@@ -2776,6 +2778,8 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
         }
 
         obj = newobj_alloc(objspace, cr, size_pool_idx, true);
+        shape_id_t shape_id = objspace->size_pool_specific_shape_ids[size_pool_idx];
+        flags |= (VALUE)shape_id << SHAPE_FLAG_SHIFT;
         newobj_init(klass, flags, wb_protected, objspace, obj);
 
         gc_event_hook_prep(objspace, RUBY_INTERNAL_EVENT_NEWOBJ, obj, newobj_fill(obj, 0, 0, 0));
@@ -2827,6 +2831,8 @@ newobj_of0(VALUE klass, VALUE flags, int wb_protected, rb_ractor_t *cr, size_t a
                   gc_event_hook_available_p(objspace)) &&
             wb_protected) {
         obj = newobj_alloc(objspace, cr, size_pool_idx, false);
+        shape_id_t shape_id = objspace->size_pool_specific_shape_ids[size_pool_idx];
+        flags |= (VALUE)shape_id << SHAPE_FLAG_SHIFT;
         newobj_init(klass, flags, wb_protected, objspace, obj);
     }
     else {
@@ -3804,9 +3810,8 @@ Init_heap(void)
 void
 Init_gc_stress(void)
 {
-    rb_objspace_t *objspace = &rb_objspace;
-
-    gc_stress_set(objspace, ruby_initial_gc_stress);
+   rb_objspace_t *objspace = &rb_objspace;
+   gc_stress_set(objspace, ruby_initial_gc_stress);
 }
 
 typedef int each_obj_callback(void *, void *, size_t, void *);
@@ -14288,6 +14293,14 @@ rb_gcdebug_remove_stress_to_class(int argc, VALUE *argv, VALUE self)
  */
 
 #include "gc.rbinc"
+void
+Init_size_pool_shape_ids(void)
+{
+    rb_objspace_t *objspace = &rb_objspace;
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        objspace->size_pool_specific_shape_ids[i] = rb_shape_id(rb_shape_transition_shape_capa_with_id(rb_shape_get_root_shape(), rb_make_internal_id()));
+    }
+}
 
 void
 Init_GC(void)
@@ -14407,6 +14420,8 @@ Init_GC(void)
 #undef OPT
         OBJ_FREEZE(opts);
     }
+
+    Init_size_pool_shape_ids();
 }
 
 #ifdef ruby_xmalloc
