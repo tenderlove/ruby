@@ -1438,7 +1438,7 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 void
 rb_grow_iv_list(VALUE obj)
 {
-    uint32_t newsize = (uint32_t)(rb_shape_get_shape(obj)->iv_count * 2.0);
+    uint32_t newsize = (rb_shape_get_shape(obj)->iv_count + 1) * 1.25;
     uint32_t len = ROBJECT_NUMIV(obj);
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
