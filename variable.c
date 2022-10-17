@@ -1438,8 +1438,8 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 void
 rb_grow_iv_list(VALUE obj)
 {
-    uint32_t newsize = (rb_shape_get_shape(obj)->iv_count + 1) * 1.25;
     uint32_t len = ROBJECT_NUMIV(obj);
+    uint32_t newsize = (uint32_t)((len + 1) * 1.25);
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
 
@@ -1462,8 +1462,7 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     // on this object until the buffer has been allocated, otherwise
     // GC could read off the end of the buffer.
     if (len <= index) {
-        uint32_t newsize = (uint32_t)((len + 1) * 1.25);
-        rb_ensure_iv_list_size(obj, len, newsize);
+        rb_grow_iv_list(obj);
     }
 
     RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[index], val);
