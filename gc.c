@@ -2904,18 +2904,13 @@ rb_class_instance_allocate_internal(VALUE klass, VALUE flags, bool wb_protected)
     uint32_t index_tbl_num_entries = RCLASS_EXT(klass)->max_iv_count;
 
     size_t size;
-    bool embed = true;
 #if USE_RVARGC
     size = rb_obj_embedded_size(index_tbl_num_entries);
     if (!rb_gc_size_allocatable_p(size)) {
         size = sizeof(struct RObject);
-        embed = false;
     }
 #else
     size = sizeof(struct RObject);
-    if (index_tbl_num_entries > ROBJECT_EMBED_LEN_MAX) {
-        embed = false;
-    }
 #endif
 
 #if USE_RVARGC
@@ -2924,20 +2919,18 @@ rb_class_instance_allocate_internal(VALUE klass, VALUE flags, bool wb_protected)
     VALUE obj = newobj_of(klass, flags, Qundef, Qundef, Qundef, wb_protected, size);
 #endif
 
-    if (embed) {
 #if USE_RVARGC
-        uint32_t capa = (uint32_t)((rb_gc_obj_slot_size(obj) - offsetof(struct RObject, as.ary)) / sizeof(VALUE));
-        GC_ASSERT(capa >= index_tbl_num_entries);
+    uint32_t capa = (uint32_t)((rb_gc_obj_slot_size(obj) - offsetof(struct RObject, as.ary)) / sizeof(VALUE));
+    GC_ASSERT(capa >= index_tbl_num_entries);
 
-        ROBJECT(obj)->numiv = capa;
-        for (size_t i = 0; i < capa; i++) {
-            ROBJECT(obj)->as.ary[i] = Qundef;
-        }
+    ROBJECT(obj)->numiv = capa;
 #endif
+
+#if USE_RVARGC
+    for (size_t i = 0; i < ROBJECT_NUMIV(obj); i++) {
+        ROBJECT(obj)->as.ary[i] = Qundef;
     }
-    else {
-        rb_ensure_iv_list_size(obj, ROBJECT_NUMIV(obj), index_tbl_num_entries);
-    }
+#endif
 
     return obj;
 }
