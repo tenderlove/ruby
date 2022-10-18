@@ -268,15 +268,12 @@ rb_obj_singleton_class(VALUE obj)
 MJIT_FUNC_EXPORTED void
 rb_obj_copy_ivar(VALUE dest, VALUE obj)
 {
-    uint32_t dest_len = ROBJECT_NUMIV(dest);
-    uint32_t src_len = ROBJECT_NUMIV(obj);
+    uint32_t dest_capacity = ROBJECT_NUMIV(dest);
+    uint32_t src_num_ivs = ROBJECT_IV_COUNT(obj);
 
-    if (dest_len < src_len) {
-        rb_ensure_iv_list_size(dest, dest_len, src_len);
+    if (dest_capacity < src_num_ivs) {
+        rb_ensure_iv_list_size(dest, dest_capacity, src_num_ivs);
         RUBY_ASSERT(!(RBASIC(dest)->flags & ROBJECT_EMBED));
-    }
-    else {
-        RUBY_ASSERT((RBASIC(dest)->flags & ROBJECT_EMBED));
     }
 
     VALUE * dest_buf = ROBJECT_IVPTR(dest);
