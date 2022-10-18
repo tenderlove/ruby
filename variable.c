@@ -1439,8 +1439,9 @@ void
 rb_grow_iv_list(VALUE obj)
 {
     uint32_t len = ROBJECT_NUMIV(obj);
-    uint32_t newsize = (uint32_t)((len + 1) * 1.25);
-    rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
+    RUBY_ASSERT(len > 0);
+    uint32_t newsize = (uint32_t)(len * 2);
+    rb_ensure_iv_list_size(obj, len, newsize);
 }
 
 static VALUE

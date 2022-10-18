@@ -282,6 +282,14 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     MEMCPY(dest_buf, src_buf, VALUE, ROBJECT_IV_COUNT(obj));
 }
 
+static int
+ivar_set_i(st_data_t key, st_data_t val, st_data_t obj)
+{
+    rb_ivar_set((VALUE)obj, (ID)key, (VALUE)val);
+
+    return ST_CONTINUE;
+}
+
 static void
 init_copy(VALUE dest, VALUE obj)
 {
@@ -295,19 +303,28 @@ init_copy(VALUE dest, VALUE obj)
     rb_copy_generic_ivar(dest, obj);
     rb_gc_copy_finalizer(dest, obj);
 
-    rb_shape_t *shape_to_set = rb_shape_get_shape(obj);
+    if (rb_gc_obj_slot_size(obj) == rb_gc_obj_slot_size(dest)) {
+        if (RB_TYPE_P(obj, T_OBJECT)) {
+            rb_obj_copy_ivar(dest, obj);
+        }
 
-    // If the object is frozen, the "dup"'d object will *not* be frozen,
-    // so we need to copy the frozen shape's parent to the new object.
-    if (rb_shape_frozen_shape_p(shape_to_set)) {
-        shape_to_set = rb_shape_get_shape_by_id(shape_to_set->parent_id);
+        rb_shape_t *shape_to_set = rb_shape_get_shape(obj);
+
+        // If the object is frozen, the "dup"'d object will *not* be frozen,
+        // so we need to copy the frozen shape's parent to the new object.
+        if (rb_shape_frozen_shape_p(shape_to_set)) {
+            shape_to_set = rb_shape_get_shape_by_id(shape_to_set->parent_id);
+        }
+
+        // shape ids are different
+        rb_shape_set_shape(dest, shape_to_set);
     }
-
-    // shape ids are different
-    rb_shape_set_shape(dest, shape_to_set);
-
-    if (RB_TYPE_P(obj, T_OBJECT)) {
-        rb_obj_copy_ivar(dest, obj);
+    else {
+        // If obj and dest are allocated into different size_pools,
+        // they will not make the same shape transitions.
+        // In this case we set ivars one by one to ensure dest
+        // has the correct shape
+        rb_ivar_foreach(obj, ivar_set_i, (st_data_t)dest);
     }
 }
 
