@@ -1412,7 +1412,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t dest_shape_id, attr_index_t i
 
                     ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
 
-                    RUBY_ASSERT(rb_shape_get_next(rb_shape_get_shape_by_id(source_shape_id), obj, id) == dest_shape);
+                    RUBY_ASSERT(rb_shape_get_next_no_side_effects(rb_shape_get_shape_by_id(source_shape_id), obj, id) == dest_shape);
                     RUBY_ASSERT(index < ROBJECT_NUMIV(obj));
 
                 }

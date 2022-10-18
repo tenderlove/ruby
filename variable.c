@@ -1389,28 +1389,28 @@ rb_obj_transient_heap_evacuate(VALUE obj, int promote)
 #endif
 
 void
-rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
+rb_ensure_iv_list_size(VALUE obj, uint32_t current_capacity, uint32_t new_capacity)
 {
     VALUE *ptr = ROBJECT_IVPTR(obj);
     VALUE *newptr;
 
     if (RBASIC(obj)->flags & ROBJECT_EMBED) {
-        newptr = obj_ivar_heap_alloc(obj, newsize);
-        MEMCPY(newptr, ptr, VALUE, len);
+        newptr = obj_ivar_heap_alloc(obj, new_capacity);
+        MEMCPY(newptr, ptr, VALUE, current_capacity);
         RB_FL_UNSET_RAW(obj, ROBJECT_EMBED);
         ROBJECT(obj)->as.heap.ivptr = newptr;
     }
     else {
-        newptr = obj_ivar_heap_realloc(obj, len, newsize);
+        newptr = obj_ivar_heap_realloc(obj, current_capacity, new_capacity);
     }
 
-    for (; len < newsize; len++) {
-        newptr[len] = Qundef;
+    for (; current_capacity < new_capacity; current_capacity++) {
+        newptr[current_capacity] = Qundef;
     }
 #if USE_RVARGC
-    ROBJECT(obj)->numiv = newsize;
+    ROBJECT(obj)->numiv = new_capacity;
 #else
-    ROBJECT(obj)->as.heap.numiv = newsize;
+    ROBJECT(obj)->as.heap.numiv = new_capacity;
 #endif
 }
 
@@ -1439,8 +1439,9 @@ void
 rb_grow_iv_list(VALUE obj)
 {
     uint32_t len = ROBJECT_NUMIV(obj);
-    uint32_t newsize = (uint32_t)((len + 1) * 1.25);
-    rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
+    RUBY_ASSERT(len > 0);
+    uint32_t newsize = (uint32_t)(len * 2);
+    rb_ensure_iv_list_size(obj, len, newsize);
 }
 
 static VALUE

@@ -2936,7 +2936,7 @@ rb_class_instance_allocate_internal(VALUE klass, VALUE flags, bool wb_protected)
 #endif
     }
     else {
-        rb_ensure_iv_list_size(obj, 0, index_tbl_num_entries);
+        rb_ensure_iv_list_size(obj, ROBJECT_NUMIV(obj), index_tbl_num_entries);
     }
 
     return obj;

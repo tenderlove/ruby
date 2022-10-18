@@ -422,16 +422,33 @@ def message_filter(repo, sha)
   log = STDIN.read
   log.delete!("\r")
   url = "https://github.com/#{repo}"
-  print "[#{repo}] ", log.gsub(/\b(?:(?i:fix(?:e[sd])?) +|GH-)\K#(?=\d+\b)|\(\K#(?=\d+\))/) {
-    "#{url}/pull/"
-  }.gsub(%r{(?<![-\[\](){}\w@/])(?:(\w+(?:-\w+)*/\w+(?:-\w+)*)@)?(\h{10,40})\b}) {|c|
-    "https://github.com/#{$1 || repo}/commit/#{$2[0,12]}"
-  }.sub(/\s*(?=(?i:\nCo-authored-by:.*)*\Z)/) {
-    "\n\n" "#{url}/commit/#{sha[0,10]}\n"
-  }
+  subject, log = log.split("\n\n", 2)
+  conv = proc do |s|
+    mod = true if s.gsub!(/\b(?:(?i:fix(?:e[sd])?) +)\K#(?=\d+\b)|\bGH-#?(?=\d+\b)|\(\K#(?=\d+\))/) {
+      "#{url}/pull/"
+    }
+    mod |= true if s.gsub!(%r{(?<![-\[\](){}\w@/])(?:(\w+(?:-\w+)*/\w+(?:-\w+)*)@)?(\h{10,40})\b}) {|c|
+      "https://github.com/#{$1 || repo}/commit/#{$2[0,12]}"
+    }
+    mod
+  end
+  subject = "[#{repo}] #{subject}"
+  subject.gsub!(/\s*\n\s*/, " ")
+  if conv[subject]
+    if subject.size > 68
+      subject.gsub!(/\G.{,67}[^\s.,][.,]*\K\s+/, "\n")
+    end
+  end
+  if log
+    conv[log]
+    log.sub!(/\s*(?=(?i:\nCo-authored-by:.*)*\Z)/) {
+      "\n\n" "#{url}/commit/#{sha[0,10]}\n"
+    }
+  end
+  print subject, "\n\n", log
 end
 
-# NOTE: This method is also used by ruby-commit-hook/bin/update-default-gem.sh
+# NOTE: This method is also used by GitHub ruby/git.ruby-lang.org's bin/update-default-gem.sh
 # @param gem [String] A gem name, also used as a git remote name. REPOSITORIES converts it to the appropriate GitHub repository.
 # @param ranges [Array<String>] "before..after". Note that it will NOT sync "before" (but commits after that).
 # @param edit [TrueClass] Set true if you want to resolve conflicts. Obviously, update-default-gem.sh doesn't use this.
