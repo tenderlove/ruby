@@ -375,7 +375,7 @@ module RubyVM::MJIT
           src << "    if (source_shape_id == ROBJECT_SHAPE_ID(obj) && \n"
           src << "        dest_shape_id != ROBJECT_SHAPE_ID(obj)) {\n"
           src << "        if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {\n"
-          src << "           rb_init_iv_list(obj);\n"
+          src << "           rb_grow_iv_list(obj);\n"
           src << "        }\n"
           src << "        ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);\n"
           src << "        VALUE *ptr = ROBJECT_IVPTR(obj);\n"
