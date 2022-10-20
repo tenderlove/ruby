@@ -108,6 +108,7 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 #endif
 
 bool rb_shape_root_shape_p(rb_shape_t* shape);
+rb_shape_t* rb_shape_get_root_shape(void);
 
 rb_shape_t* rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id);
 

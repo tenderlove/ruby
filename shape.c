@@ -9,9 +9,8 @@
 /*
  * Shape getters
  */
-static rb_shape_t*
-rb_shape_get_root_shape(void)
-{
+rb_shape_t*
+rb_shape_get_root_shape(void) {
     return GET_VM()->root_shape;
 }
 
