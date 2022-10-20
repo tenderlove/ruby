@@ -56,6 +56,7 @@ enum shape_type {
     SHAPE_ROOT,
     SHAPE_IVAR,
     SHAPE_FROZEN,
+    SHAPE_CAPACITY_CHANGE,
     SHAPE_IVAR_UNDEF,
 };
 

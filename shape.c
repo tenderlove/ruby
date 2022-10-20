@@ -111,7 +111,7 @@ rb_shape_lookup_id(rb_shape_t* shape, ID id, enum shape_type shape_type)
 }
 
 static rb_shape_t*
-get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum shape_type shape_type)
+get_next_shape_internal(rb_shape_t* shape, ID id, enum shape_type shape_type)
 {
     rb_shape_t *res = NULL;
     RUBY_ASSERT(SHAPE_FROZEN != (enum shape_type)shape->type);
@@ -139,25 +139,18 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum shape_type sha
 
                 new_shape->type = (uint8_t)shape_type;
 
-                switch (shape_type) {
-                  case SHAPE_IVAR:
-                    new_shape->iv_count = rb_shape_get_shape_by_id(new_shape->parent_id)->iv_count + 1;
-
-                    // Check if we should update max_iv_count on the object's class
-                    if (BUILTIN_TYPE(obj) == T_OBJECT) {
-                        VALUE klass = rb_obj_class(obj);
-                        if (new_shape->iv_count > RCLASS_EXT(klass)->max_iv_count) {
-                            RCLASS_EXT(klass)->max_iv_count = new_shape->iv_count;
-                        }
-                    }
-                    break;
-                  case SHAPE_IVAR_UNDEF:
-                  case SHAPE_FROZEN:
-                    new_shape->iv_count = rb_shape_get_shape_by_id(new_shape->parent_id)->iv_count;
-                    break;
-                  case SHAPE_ROOT:
-                    rb_bug("Unreachable");
-                    break;
+                switch(shape_type) {
+                    case SHAPE_IVAR:
+                        new_shape->iv_count = rb_shape_get_shape_by_id(new_shape->parent_id)->iv_count + 1;
+                        break;
+                    case SHAPE_CAPACITY_CHANGE:
+                    case SHAPE_IVAR_UNDEF:
+                    case SHAPE_FROZEN:
+                        new_shape->iv_count = rb_shape_get_shape_by_id(new_shape->parent_id)->iv_count;
+                        break;
+                    case SHAPE_ROOT:
+                        rb_bug("Unreachable");
+                        break;
                 }
 
                 rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
@@ -179,7 +172,7 @@ rb_shape_frozen_shape_p(rb_shape_t* shape)
 void
 rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape)
 {
-    rb_shape_t* next_shape = get_next_shape_internal(shape, id, obj, SHAPE_IVAR_UNDEF);
+    rb_shape_t* next_shape = get_next_shape_internal(shape, id, SHAPE_IVAR_UNDEF);
 
     if (shape == next_shape) {
         return;
@@ -210,7 +203,7 @@ rb_shape_transition_shape_frozen(VALUE obj)
             id_frozen = rb_make_internal_id();
         }
 
-        next_shape = get_next_shape_internal(shape, (ID)id_frozen, obj, SHAPE_FROZEN);
+        next_shape = get_next_shape_internal(shape, (ID)id_frozen, SHAPE_FROZEN);
     }
 
     RUBY_ASSERT(next_shape);
@@ -230,7 +223,17 @@ rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape)
 rb_shape_t*
 rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
 {
-    return get_next_shape_internal(shape, id, obj, SHAPE_IVAR);
+    rb_shape_t * new_shape = get_next_shape_internal(shape, id, SHAPE_IVAR);
+
+    // Check if we should update max_iv_count on the object's class
+    if (BUILTIN_TYPE(obj) == T_OBJECT) {
+        VALUE klass = rb_obj_class(obj);
+        if (new_shape->iv_count > RCLASS_EXT(klass)->max_iv_count) {
+            RCLASS_EXT(klass)->max_iv_count = new_shape->iv_count;
+        }
+    }
+
+    return new_shape;
 }
 
 bool
@@ -246,6 +249,7 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
                 RUBY_ASSERT(shape->iv_count > 0);
                 *value = shape->iv_count - 1;
                 return true;
+              case SHAPE_CAPACITY_CHANGE:
               case SHAPE_IVAR_UNDEF:
               case SHAPE_ROOT:
                 return false;
