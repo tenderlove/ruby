@@ -138,6 +138,7 @@
 #include "ractor_core.h"
 
 #include "builtin.h"
+#include "shape.h"
 
 #define rb_setjmp(env) RUBY_SETJMP(env)
 #define rb_jmp_buf rb_jmpbuf_t
@@ -746,6 +747,7 @@ typedef struct rb_objspace {
     VALUE next_object_id;
 
     rb_size_pool_t size_pools[SIZE_POOL_COUNT];
+    shape_id_t size_pool_specific_shape_ids[SIZE_POOL_COUNT];
 
     struct {
         rb_atomic_t finalizing;
@@ -14294,6 +14296,14 @@ rb_gcdebug_remove_stress_to_class(int argc, VALUE *argv, VALUE self)
  */
 
 #include "gc.rbinc"
+void
+Init_size_pool_shape_ids(void)
+{
+    rb_objspace_t *objspace = &rb_objspace;
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        objspace->size_pool_specific_shape_ids[i] = rb_shape_id(rb_shape_transition_shape_capa_with_id(rb_shape_get_root_shape(), rb_make_internal_id()));
+    }
+}
 
 void
 Init_GC(void)
@@ -14413,6 +14423,8 @@ Init_GC(void)
 #undef OPT
         OBJ_FREEZE(opts);
     }
+
+    Init_size_pool_shape_ids();
 }
 
 #ifdef ruby_xmalloc

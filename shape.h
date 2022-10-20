@@ -121,6 +121,8 @@ rb_shape_t* rb_shape_get_shape(VALUE obj);
 int rb_shape_frozen_shape_p(rb_shape_t* shape);
 void rb_shape_transition_shape_frozen(VALUE obj);
 void rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape);
+rb_shape_t* rb_shape_transition_shape_capa(rb_shape_t* shape);
+rb_shape_t* rb_shape_transition_shape_capa_with_id(rb_shape_t* shape, ID id);
 void rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape);
 rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);

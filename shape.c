@@ -236,6 +236,24 @@ rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
     return new_shape;
 }
 
+rb_shape_t*
+rb_shape_transition_shape_capa(rb_shape_t* shape)
+{
+    static ID capa_change_id;
+    if (!capa_change_id) {
+        capa_change_id = rb_make_internal_id();
+    }
+
+    return get_next_shape_internal(shape, capa_change_id, SHAPE_CAPACITY_CHANGE);
+}
+
+rb_shape_t*
+rb_shape_transition_shape_capa_with_id(rb_shape_t* shape, ID id)
+{
+    return get_next_shape_internal(shape, id, SHAPE_CAPACITY_CHANGE);
+}
+
+
 bool
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
 {
