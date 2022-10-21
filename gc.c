@@ -3465,9 +3465,6 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
         if (FL_TEST_RAW(obj, RCLASS_SUPERCLASSES_INCLUDE_SELF)) {
             xfree(RCLASS_SUPERCLASSES(obj));
         }
-#if SIZEOF_SERIAL_T != SIZEOF_VALUE && USE_RVARGC
-        xfree(RCLASS(obj)->class_serial_ptr);
-#endif
 
 #if !USE_RVARGC
         if (RCLASS_EXT(obj))
