@@ -138,7 +138,6 @@
 #include "ractor_core.h"
 
 #include "builtin.h"
-#include "shape.h"
 
 #define rb_setjmp(env) RUBY_SETJMP(env)
 #define rb_jmp_buf rb_jmpbuf_t
@@ -3456,7 +3455,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             xfree(RCLASS_SUPERCLASSES(obj));
         }
 
-#if !USE_RVARGC
+#if SIZE_POOL_COUNT == 1
         if (RCLASS_EXT(obj))
             xfree(RCLASS_EXT(obj));
 #endif
@@ -4875,7 +4874,7 @@ obj_memsize_of(VALUE obj, int use_all_types)
             if (FL_TEST_RAW(obj, RCLASS_SUPERCLASSES_INCLUDE_SELF)) {
                 size += (RCLASS_SUPERCLASS_DEPTH(obj) + 1) * sizeof(VALUE);
             }
-#if !USE_RVARGC
+#if SIZE_POOL_COUNT == 1
             size += sizeof(rb_classext_t);
 #endif
         }
@@ -14292,6 +14291,23 @@ Init_size_pool_shape_ids(void)
     }
 }
 
+/*
+ *  call-seq:
+ *      GC.using_rvargc? -> true or false
+ *
+ *  Returns true if using experimental feature Variable Width Allocation, false
+ *  otherwise.
+ */
+static VALUE
+gc_using_rvargc_p(VALUE mod)
+{
+#if USE_RVARGC
+    return Qtrue;
+#else
+    return Qfalse;
+#endif
+}
+
 void
 Init_GC(void)
 {
@@ -14368,6 +14384,8 @@ Init_GC(void)
     rb_define_singleton_method(rb_mGC, "malloc_allocated_size", gc_malloc_allocated_size, 0);
     rb_define_singleton_method(rb_mGC, "malloc_allocations", gc_malloc_allocations, 0);
 #endif
+
+    rb_define_singleton_method(rb_mGC, "using_rvargc?", gc_using_rvargc_p, 0);
 
     if (GC_COMPACTION_SUPPORTED) {
         rb_define_singleton_method(rb_mGC, "compact", gc_compact, 0);
