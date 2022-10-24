@@ -550,16 +550,16 @@ class TestObjSpace < Test::Unit::TestCase
     # This test makes assertions on the assignment to `str`, so we look for
     # the second appearance of /TEST STRING/ in the output
     test_string_in_dump_all = output.grep(/TEST STRING/)
-    assert_equal(test_string_in_dump_all.size, 2)
+    assert_equal(2, test_string_in_dump_all.size)
 
     entry_hash = JSON.parse(test_string_in_dump_all[1])
 
-    assert_equal(entry_hash["bytesize"], 11)
-    assert_equal(entry_hash["value"], "TEST STRING")
-    assert_equal(entry_hash["encoding"], "UTF-8")
-    assert_equal(entry_hash["file"], "-")
-    assert_equal(entry_hash["line"], 4)
-    assert_equal(entry_hash["method"], "dump_my_heap_please")
+    assert_equal(11, entry_hash["bytesize"])
+    assert_equal("TEST STRING", entry_hash["value"])
+    assert_equal("UTF-8", entry_hash["encoding"])
+    assert_equal("-", entry_hash["file"])
+    assert_equal(4, entry_hash["line"])
+    assert_equal("dump_my_heap_please", entry_hash["method"])
     assert_not_nil(entry_hash["generation"])
   end
 
