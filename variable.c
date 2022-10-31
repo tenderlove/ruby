@@ -1566,22 +1566,47 @@ rb_ivar_defined(VALUE obj, ID id)
 typedef int rb_ivar_foreach_callback_func(ID key, VALUE val, st_data_t arg);
 st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
+enum iv_iter_type {
+    IV_ITER_OBJECT,
+    IV_ITER_CLASS,
+    IV_ITER_GENERIC,
+};
+
+struct iv_itr_data {
+    enum iv_iter_type type;
+    VALUE obj;
+    struct gen_ivtbl * ivtbl;
+    st_data_t arg;
+};
+
 static void
-iterate_over_shapes_with_callback(rb_shape_t *shape, VALUE* iv_list, rb_ivar_foreach_callback_func *callback, st_data_t arg)
+iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_func *callback, struct iv_itr_data * itr_data)
 {
     switch ((enum shape_type)shape->type) {
       case SHAPE_ROOT:
         return;
       case SHAPE_IVAR:
-        iterate_over_shapes_with_callback(rb_shape_get_shape_by_id(shape->parent_id), iv_list, callback, arg);
+        iterate_over_shapes_with_callback(rb_shape_get_shape_by_id(shape->parent_id), callback, itr_data);
+        VALUE * iv_list;
+        switch(itr_data->type) {
+            case IV_ITER_OBJECT:
+              iv_list = ROBJECT_IVPTR(itr_data->obj);
+              break;
+            case IV_ITER_CLASS:
+              iv_list = RCLASS_IVPTR(itr_data->obj);
+              break;
+            case IV_ITER_GENERIC:
+              iv_list = itr_data->ivtbl->ivptr;
+              break;
+        }
         VALUE val = iv_list[shape->next_iv_index - 1];
         if (val != Qundef) {
-            callback(shape->edge_name, val, arg);
+            callback(shape->edge_name, val, itr_data->arg);
         }
         return;
       case SHAPE_IVAR_UNDEF:
       case SHAPE_FROZEN:
-        iterate_over_shapes_with_callback(rb_shape_get_shape_by_id(shape->parent_id), iv_list, callback, arg);
+        iterate_over_shapes_with_callback(rb_shape_get_shape_by_id(shape->parent_id), callback, itr_data);
         return;
     }
 }
@@ -1590,7 +1615,11 @@ static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     rb_shape_t* shape = rb_shape_get_shape(obj);
-    iterate_over_shapes_with_callback(shape, ROBJECT_IVPTR(obj), func, arg);
+    struct iv_itr_data itr_data;
+    itr_data.type = IV_ITER_OBJECT;
+    itr_data.obj = obj;
+    itr_data.arg = arg;
+    iterate_over_shapes_with_callback(shape, func, &itr_data);
 }
 
 static void
@@ -1600,7 +1629,11 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     struct gen_ivtbl *ivtbl;
     if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes_with_callback(shape, ivtbl->ivptr, func, arg);
+    struct iv_itr_data itr_data;
+    itr_data.type = IV_ITER_GENERIC;
+    itr_data.ivtbl = ivtbl;
+    itr_data.arg = arg;
+    iterate_over_shapes_with_callback(shape, func, &itr_data);
 }
 
 static void
@@ -1609,7 +1642,11 @@ class_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
 
     rb_shape_t* shape = rb_shape_get_shape(obj);
-    iterate_over_shapes_with_callback(shape, RCLASS_IVPTR(obj), func, arg);
+    struct iv_itr_data itr_data;
+    itr_data.type = IV_ITER_CLASS;
+    itr_data.obj = obj;
+    itr_data.arg = arg;
+    iterate_over_shapes_with_callback(shape, func, &itr_data);
 }
 
 void
