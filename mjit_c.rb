@@ -158,16 +158,16 @@ module RubyVM::MJIT
     Primitive.cexpr! %q{ INT2NUM(VM_METHOD_TYPE_ISEQ) }
   end
 
-  def C.SHAPE_BITS
-    Primitive.cexpr! %q{ UINT2NUM(SHAPE_BITS) }
-  end
-
   def C.SHAPE_CAPACITY_CHANGE
     Primitive.cexpr! %q{ UINT2NUM(SHAPE_CAPACITY_CHANGE) }
   end
 
   def C.SHAPE_FLAG_SHIFT
     Primitive.cexpr! %q{ UINT2NUM(SHAPE_FLAG_SHIFT) }
+  end
+
+  def C.SHAPE_ID_NUM_BITS
+    Primitive.cexpr! %q{ UINT2NUM(SHAPE_ID_NUM_BITS) }
   end
 
   def C.SHAPE_FROZEN
