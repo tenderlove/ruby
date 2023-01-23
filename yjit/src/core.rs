@@ -1616,7 +1616,16 @@ pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> Option<CodePtr> {
     let code_ptr = gen_entry_prologue(cb, iseq, insn_idx);
 
     // Try to generate code for the entry block
-    let block = gen_block_series(blockid, &Context::default(), ec, cb, ocb);
+    let mut ctx = Context::default();
+
+    // Get the receiver from the current EC and teach the context
+    // about the shape of the receiver
+    unsafe {
+        let recv = get_cfp_self(get_ec_cfp(ec));
+        ctx.set_self_shape_id(recv.shape_id_of());
+    };
+
+    let block = gen_block_series(blockid, &ctx, ec, cb, ocb);
 
     cb.mark_all_executable();
     ocb.unwrap().mark_all_executable();
