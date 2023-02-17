@@ -670,6 +670,11 @@ typedef struct rb_vm_struct {
     rb_shape_t *shape_list;
     rb_shape_t *root_shape;
     shape_id_t next_shape_id;
+    st_table * ic_stats;
+    st_table * ic_class_stats;
+    VALUE ic_classes;
+    st_table * pc_to_iseq;
+    bool log_ic_info;
 
     /* load */
     VALUE top_self;

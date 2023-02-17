@@ -79,7 +79,7 @@ calc_pos(const rb_iseq_t *iseq, const VALUE *pc, int *lineno, int *node_id)
     }
 }
 
-inline static int
+int
 calc_lineno(const rb_iseq_t *iseq, const VALUE *pc)
 {
     int lineno;
