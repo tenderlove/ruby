@@ -3531,7 +3531,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
         cc_table_free(objspace, obj, FALSE);
         if (rb_shape_obj_too_complex(obj)) {
             RB_DEBUG_COUNTER_INC(obj_obj_too_complex);
-            rb_id_table_free(RCLASS_TABLE_IVPTR(obj));
+            st_free_table(RCLASS_TABLE_IVPTR(obj));
         }
         else if (RCLASS_IVPTR(obj)) {
             xfree(RCLASS_IVPTR(obj));

@@ -1137,8 +1137,8 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
 #endif
 
                 if (rb_shape_obj_too_complex(obj)) {
-                    struct rb_id_table * iv_table = RCLASS_TABLE_IVPTR(obj);
-                    if (rb_id_table_lookup(iv_table, id, &val)) {
+                    st_table * iv_table = RCLASS_TABLE_IVPTR(obj);
+                    if (rb_st_lookup(iv_table, id, &val)) {
                         return val;
                     }
                     else {
@@ -1739,7 +1739,7 @@ class_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     itr_data.arg = arg;
     itr_data.func = func;
     if (rb_shape_obj_too_complex(obj)) {
-        rb_id_table_foreach(RCLASS_TABLE_IVPTR(obj), each_hash_iv, &itr_data);
+        rb_st_foreach(RCLASS_TABLE_IVPTR(obj), each_hash_iv, (st_data_t)&itr_data);
     }
     else {
         iterate_over_shapes_with_callback(shape, func, &itr_data);
@@ -2004,8 +2004,8 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         if (rb_shape_obj_too_complex(obj)) {
-            if (rb_id_table_lookup(RCLASS_TABLE_IVPTR(obj), id, &val)) {
-                rb_id_table_delete(RCLASS_TABLE_IVPTR(obj), id);
+            if (rb_st_lookup(RCLASS_TABLE_IVPTR(obj), id, &val)) {
+                rb_st_delete(RCLASS_TABLE_IVPTR(obj), (st_data_t *)&id, 0);
             }
         } else {
             rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
@@ -3978,8 +3978,8 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
     RB_VM_LOCK_ENTER();
     {
         if (rb_shape_obj_too_complex(obj)) {
-            struct rb_id_table * iv_table = RCLASS_TABLE_IVPTR(obj);
-            rb_id_table_insert(iv_table, key, value);
+            st_table * iv_table = RCLASS_TABLE_IVPTR(obj);
+            rb_st_insert(iv_table, key, value);
             RB_OBJ_WRITTEN(obj, Qundef, value);
             found = 0;
         }
@@ -4004,13 +4004,13 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
 
                 // stop using shapes if we are now too complex
                 if (shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-                    struct rb_id_table * table = rb_id_table_create(shape->next_iv_index);
+                    st_table * table = st_init_numtable_with_size(shape->next_iv_index);
 
                     // Evacuate all previous values from shape into id_table
                     rb_ivar_foreach(obj, rb_obj_evacuate_ivs_to_hash_table, (st_data_t)table);
 
                     // insert the new value
-                    rb_id_table_insert(table, key, value);
+                    st_insert(table, (st_data_t)key, (st_data_t)value);
                     RB_OBJ_WRITTEN(obj, Qundef, value);
 
                     rb_shape_set_too_complex(obj);

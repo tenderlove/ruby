@@ -407,15 +407,6 @@ rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
             RCLASS_EXT(klass)->variation_count++;
         }
     }
-    else if (BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE) {
-        if (new_shape->next_iv_index > RCLASS_EXT(obj)->max_iv_count) {
-            RCLASS_EXT(obj)->max_iv_count = new_shape->next_iv_index;
-        }
-
-        if (variation_created) {
-            RCLASS_EXT(obj)->variation_count++;
-        }
-    }
 
     return new_shape;
 }
