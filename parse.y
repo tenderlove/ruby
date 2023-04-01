@@ -3149,6 +3149,13 @@ args		: arg_value
                     /*% %*/
                     /*% ripper: args_add!($1, $3) %*/
                     }
+                | args ',' keyword_and arg_value
+                    {
+                    /*%%%*/
+                        $$ = last_arg_append(p, $1, $4, &@$);
+                    /*% %*/
+                    /*% ripper: args_add!($1, $4) %*/
+                    }
                 | args ',' tSTAR arg_value
                     {
                     /*%%%*/
@@ -5692,6 +5699,16 @@ f_arg		: f_arg_item
                         rb_discard_node(p, $3);
                     /*% %*/
                     /*% ripper: rb_ary_push($1, get_value($3)) %*/
+                    }
+                | f_arg ',' keyword_and f_arg_item
+                    {
+                    /*%%%*/
+                        $$ = $1;
+                        $$->nd_plen++;
+                        $$->nd_next = block_append(p, $$->nd_next, $4->nd_next);
+                        rb_discard_node(p, $4);
+                    /*% %*/
+                    /*% ripper: rb_ary_push($1, get_value($4)) %*/
                     }
                 ;
 
