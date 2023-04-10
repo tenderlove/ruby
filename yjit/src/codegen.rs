@@ -7571,13 +7571,13 @@ fn gen_getconstant(
     let klass_opnd = ctx.stack_pop(1);
 
     extern "C" {
-        fn rb_vm_get_ev_const(ec: EcPtr, klass: VALUE, id: ID, allow_nil: VALUE) -> VALUE;
+        fn rb_vm_get_ev_const(cfp: CfpPtr, klass: VALUE, id: ID, allow_nil: VALUE) -> VALUE;
     }
 
     let val_opnd = asm.ccall(
         rb_vm_get_ev_const as *const u8,
         vec![
-            EC,
+            CFP,
             klass_opnd,
             id.into(),
             allow_nil_opnd

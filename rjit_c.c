@@ -514,7 +514,7 @@ extern ID rb_get_symbol_id(VALUE name);
 extern VALUE rb_fix_aref(VALUE fix, VALUE idx);
 extern VALUE rb_str_getbyte(VALUE str, VALUE index);
 extern VALUE rb_vm_concat_array(VALUE ary1, VALUE ary2st);
-extern VALUE rb_vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, VALUE allow_nil);
+extern VALUE rb_vm_get_ev_const(const rb_control_frame_t *cfp, VALUE orig_klass, ID id, VALUE allow_nil);
 extern VALUE rb_vm_getclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *cfp, ID id, ICVARC ic);
 extern VALUE rb_vm_opt_newarray_min(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr);
 extern VALUE rb_vm_splat_array(VALUE flag, VALUE array);

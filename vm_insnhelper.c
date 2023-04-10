@@ -989,14 +989,14 @@ vm_get_iclass(const rb_control_frame_t *cfp, VALUE klass)
 }
 
 static inline VALUE
-vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_nil, int is_defined)
+vm_get_ev_const(const rb_control_frame_t *cfp, VALUE orig_klass, ID id, bool allow_nil, int is_defined)
 {
     void rb_const_warn_if_deprecated(const rb_const_entry_t *ce, VALUE klass, ID id);
     VALUE val;
 
     if (NIL_P(orig_klass) && allow_nil) {
         /* in current lexical scope */
-        const rb_cref_t *root_cref = vm_get_cref(ec->cfp->ep);
+        const rb_cref_t *root_cref = vm_get_cref(cfp->ep);
         const rb_cref_t *cref;
         VALUE klass = Qnil;
 
@@ -1048,10 +1048,10 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
 
         /* search self */
         if (root_cref && !NIL_P(CREF_CLASS(root_cref))) {
-            klass = vm_get_iclass(ec->cfp, CREF_CLASS(root_cref));
+            klass = vm_get_iclass(cfp, CREF_CLASS(root_cref));
         }
         else {
-            klass = CLASS_OF(ec->cfp->self);
+            klass = CLASS_OF(cfp->self);
         }
 
         if (is_defined) {
@@ -1073,9 +1073,9 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
 }
 
 VALUE
-rb_vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, VALUE allow_nil)
+rb_vm_get_ev_const(const rb_control_frame_t *cfp, VALUE orig_klass, ID id, VALUE allow_nil)
 {
-    return vm_get_ev_const(ec, orig_klass, id, allow_nil == Qtrue, 0);
+    return vm_get_ev_const(cfp, orig_klass, id, allow_nil == Qtrue, 0);
 }
 
 static inline VALUE
@@ -1091,7 +1091,7 @@ vm_get_ev_const_chain(rb_execution_context_t *ec, const ID *segments)
     }
     while (segments[idx]) {
         ID id = segments[idx++];
-        val = vm_get_ev_const(ec, val, id, allow_nil, 0);
+        val = vm_get_ev_const(ec->cfp, val, id, allow_nil, 0);
         allow_nil = FALSE;
     }
     return val;
@@ -4749,7 +4749,7 @@ vm_defined(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, rb_num_t op_
       case DEFINED_CONST_FROM: {
         bool allow_nil = type == DEFINED_CONST;
         klass = v;
-        return vm_get_ev_const(ec, klass, SYM2ID(obj), allow_nil, true);
+        return vm_get_ev_const(ec->cfp, klass, SYM2ID(obj), allow_nil, true);
         break;
       }
       case DEFINED_FUNC:

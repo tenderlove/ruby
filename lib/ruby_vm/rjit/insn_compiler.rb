@@ -697,7 +697,7 @@ module RubyVM::RJIT
       allow_nil_opnd = ctx.stack_pop(1)
       klass_opnd = ctx.stack_pop(1)
 
-      asm.mov(C_ARGS[0], EC)
+      asm.mov(C_ARGS[0], CFP)
       asm.mov(C_ARGS[1], klass_opnd)
       asm.mov(C_ARGS[2], id)
       asm.mov(C_ARGS[3], allow_nil_opnd)
