@@ -7,9 +7,9 @@
 #else
 #   ifndef YP_EXPORTED_FUNCTION
 #       ifndef RUBY_FUNC_EXPORTED
-#           define YP_EXPORTED_FUNCTION __attribute__((__visibility__("default"))) extern
+#           define YP_EXPORTED_FUNCTION
 #       else
-#           define YP_EXPORTED_FUNCTION RUBY_FUNC_EXPORTED
+#           define YP_EXPORTED_FUNCTION
 #       endif
 #   endif
 #endif
