@@ -855,6 +855,20 @@ rb_iseq_compile_node(rb_iseq_t *iseq, const NODE *node)
     return iseq_setup(iseq, ret);
 }
 
+static VALUE rb_translate_yarp(rb_iseq_t *iseq, const yp_node_t *node, LINK_ANCHOR *const ret);
+
+VALUE
+rb_iseq_compile_yarp_node(rb_iseq_t * iseq, const yp_node_t * yarp_pointer)
+{
+    DECL_ANCHOR(ret);
+    INIT_ANCHOR(ret);
+
+    CHECK(rb_translate_yarp(iseq, yarp_pointer, ret));
+
+    CHECK(iseq_setup_insn(iseq, ret));
+    return iseq_setup(iseq, ret);
+}
+
 static int
 rb_iseq_translate_threaded_code(rb_iseq_t *iseq)
 {
@@ -13288,3 +13302,5 @@ rb_iseq_ibf_load_extra_data(VALUE str)
     RB_GC_GUARD(loader_obj);
     return extra_str;
 }
+
+#include "yarp/yarp_compiler.c"
