@@ -393,12 +393,12 @@ jit_compile(rb_execution_context_t *ec)
     // Trigger JIT compilation as needed
     if (yjit_enabled) {
         if (rb_yjit_threshold_hit(iseq)) {
-            rb_yjit_compile_iseq(iseq, ec);
+            rb_yjit_compile_iseq(iseq, ec->cfp);
         }
     }
     else { // rb_rjit_call_p
         if (body->total_calls == rb_rjit_call_threshold()) {
-            rb_rjit_compile(iseq);
+            rb_rjit_compile(iseq, ec->cfp);
         }
     }
 

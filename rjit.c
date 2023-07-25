@@ -349,14 +349,14 @@ rb_rjit_iseq_new(rb_iseq_t *iseq)
 }
 
 void
-rb_rjit_compile(const rb_iseq_t *iseq)
+rb_rjit_compile(const rb_iseq_t *iseq, const rb_control_frame_t * cfp)
 {
     RB_VM_LOCK_ENTER();
     rb_vm_barrier();
 
     WITH_RJIT_ISOLATED({
         VALUE iseq_ptr = rb_funcall(rb_cRJITIseqPtr, rb_intern("new"), 1, SIZET2NUM((size_t)iseq));
-        VALUE cfp_ptr = rb_funcall(rb_cRJITCfpPtr, rb_intern("new"), 1, SIZET2NUM((size_t)GET_EC()->cfp));
+        VALUE cfp_ptr = rb_funcall(rb_cRJITCfpPtr, rb_intern("new"), 1, SIZET2NUM((size_t)cfp));
         rb_funcall(rb_RJITCompiler, rb_intern("compile"), 2, iseq_ptr, cfp_ptr);
     });
 

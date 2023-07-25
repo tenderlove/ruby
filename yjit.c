@@ -336,7 +336,7 @@ rb_yjit_reserve_addr_space(uint32_t mem_size)
 
 // Is anyone listening for :c_call and :c_return event currently?
 bool
-rb_c_method_tracing_currently_enabled(const rb_execution_context_t *ec)
+rb_c_method_tracing_currently_enabled(void)
 {
     rb_event_flag_t tracing_events;
     if (rb_multi_ractor_p()) {
@@ -346,7 +346,7 @@ rb_c_method_tracing_currently_enabled(const rb_execution_context_t *ec)
         // At the time of writing, events are never removed from
         // ruby_vm_event_enabled_global_flags so always checking using it would
         // mean we don't compile even after tracing is disabled.
-        tracing_events = rb_ec_ractor_hooks(ec)->events;
+        tracing_events = rb_ec_ractor_hooks(GET_EC())->events;
     }
 
     return tracing_events & (RUBY_EVENT_C_CALL | RUBY_EVENT_C_RETURN);
@@ -772,13 +772,13 @@ rb_get_cfp_iseq(struct rb_control_frame_struct *cfp)
 }
 
 VALUE *
-rb_get_cfp_pc(struct rb_control_frame_struct *cfp)
+rb_get_cfp_pc(const struct rb_control_frame_struct *cfp)
 {
     return (VALUE*)cfp->pc;
 }
 
 VALUE *
-rb_get_cfp_sp(struct rb_control_frame_struct *cfp)
+rb_get_cfp_sp(const struct rb_control_frame_struct *cfp)
 {
     return cfp->sp;
 }
@@ -1041,15 +1041,15 @@ rb_yjit_vm_unlock(unsigned int *recursive_lock_level, const char *file, int line
 }
 
 bool
-rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec)
+rb_yjit_compile_iseq(const rb_iseq_t *iseq, const rb_control_frame_t *cfp)
 {
     bool success = true;
     RB_VM_LOCK_ENTER();
     rb_vm_barrier();
 
     // Compile a block version starting at the first instruction
-    uint8_t *rb_yjit_iseq_gen_entry_point(const rb_iseq_t *iseq, rb_execution_context_t *ec); // defined in Rust
-    uint8_t *code_ptr = rb_yjit_iseq_gen_entry_point(iseq, ec);
+    uint8_t *rb_yjit_iseq_gen_entry_point(const rb_iseq_t *iseq, const rb_control_frame_t *cfp); // defined in Rust
+    uint8_t *code_ptr = rb_yjit_iseq_gen_entry_point(iseq, cfp);
 
     if (code_ptr) {
         iseq->body->jit_func = (rb_jit_func_t)code_ptr;

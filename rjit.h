@@ -48,7 +48,7 @@ RUBY_EXTERN bool rb_rjit_call_p;
 
 #define rb_rjit_call_threshold() rb_rjit_opts.call_threshold
 
-extern void rb_rjit_compile(const rb_iseq_t *iseq);
+extern void rb_rjit_compile(const rb_iseq_t *iseq, const rb_control_frame_t * cfp);
 RUBY_SYMBOL_EXPORT_END
 
 extern void rb_rjit_cancel_all(const char *reason);
@@ -77,7 +77,7 @@ extern bool rb_rjit_trace_exits_enabled;
 
 # else // USE_RJIT
 
-static inline void rb_rjit_compile(const rb_iseq_t *iseq){}
+static inline void rb_rjit_compile(const rb_iseq_t *iseq, const rb_control_frame_t * cfp) {}
 
 static inline void rb_rjit_cancel_all(const char *reason){}
 static inline void rb_rjit_free_iseq(const rb_iseq_t *iseq){}

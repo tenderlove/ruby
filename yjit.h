@@ -32,7 +32,7 @@ void rb_yjit_invalidate_all_method_lookup_assumptions(void);
 void rb_yjit_cme_invalidate(rb_callable_method_entry_t *cme);
 void rb_yjit_collect_binding_alloc(void);
 void rb_yjit_collect_binding_set(void);
-bool rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec);
+bool rb_yjit_compile_iseq(const rb_iseq_t *iseq, const rb_control_frame_t *cfp);
 void rb_yjit_init(void);
 void rb_yjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop);
 void rb_yjit_constant_state_changed(ID id);

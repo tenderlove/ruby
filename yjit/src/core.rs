@@ -2008,11 +2008,11 @@ impl BlockId {
 fn gen_block_series(
     blockid: BlockId,
     start_ctx: &Context,
-    ec: EcPtr,
+    cfp: CfpPtr,
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
 ) -> Option<BlockRef> {
-    let result = gen_block_series_body(blockid, start_ctx, ec, cb, ocb);
+    let result = gen_block_series_body(blockid, start_ctx, cfp, cb, ocb);
     if result.is_none() {
         incr_counter!(compilation_failure);
     }
@@ -2025,7 +2025,7 @@ fn gen_block_series(
 fn gen_block_series_body(
     blockid: BlockId,
     start_ctx: &Context,
-    ec: EcPtr,
+    cfp: CfpPtr,
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
 ) -> Option<BlockRef> {
@@ -2034,7 +2034,7 @@ fn gen_block_series_body(
     let mut batch = Vec::with_capacity(EXPECTED_BATCH_SIZE);
 
     // Generate code for the first block
-    let first_block = gen_single_block(blockid, start_ctx, ec, cb, ocb).ok()?;
+    let first_block = gen_single_block(blockid, start_ctx, cfp, cb, ocb).ok()?;
     batch.push(first_block); // Keep track of this block version
 
     // Add the block version to the VersionMap for this ISEQ
@@ -2073,7 +2073,7 @@ fn gen_block_series_body(
         };
 
         // Generate new block using context from the last branch.
-        let result = gen_single_block(requested_blockid, &requested_ctx, ec, cb, ocb);
+        let result = gen_single_block(requested_blockid, &requested_ctx, cfp, cb, ocb);
 
         // If the block failed to compile
         if result.is_err() {
@@ -2125,10 +2125,10 @@ fn gen_block_series_body(
 
 /// Generate a block version that is an entry point inserted into an iseq
 /// NOTE: this function assumes that the VM lock has been taken
-pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> Option<CodePtr> {
+pub fn gen_entry_point(iseq: IseqPtr, cfp: CfpPtr) -> Option<CodePtr> {
     // Compute the current instruction index based on the current PC
     let insn_idx: u16 = unsafe {
-        let ec_pc = get_cfp_pc(get_ec_cfp(ec));
+        let ec_pc = get_cfp_pc(cfp);
         iseq_pc_to_insn_idx(iseq, ec_pc)?
     };
 
@@ -2146,7 +2146,7 @@ pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> Option<CodePtr> {
     let code_ptr = gen_entry_prologue(cb, ocb, iseq, insn_idx);
 
     // Try to generate code for the entry block
-    let block = gen_block_series(blockid, &Context::default(), ec, cb, ocb);
+    let block = gen_block_series(blockid, &Context::default(), cfp, cb, ocb);
 
     cb.mark_all_executable();
     ocb.unwrap().mark_all_executable();
@@ -2251,7 +2251,7 @@ fn entry_stub_hit_body(entry_ptr: *const c_void, ec: EcPtr) -> Option<*const u8>
             blockref
         }
         // If this block hasn't yet been compiled, generate blocks after the entry guard.
-        None => match gen_block_series(blockid, &ctx, ec, cb, ocb) {
+        None => match gen_block_series(blockid, &ctx, cfp, cb, ocb) {
             Some(blockref) => blockref,
             None => { // No space
                 // Trigger code GC. This entry point will be recompiled later.
@@ -2497,7 +2497,7 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
         }
 
         // Compile the new block version
-        block = gen_block_series(target_blockid, &target_ctx, ec, cb, ocb);
+        block = gen_block_series(target_blockid, &target_ctx, cfp, cb, ocb);
 
         if block.is_none() && branch_modified {
             // We couldn't generate a new block for the branch, but we modified the branch.

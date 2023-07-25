@@ -66,9 +66,9 @@ pub struct JITState {
     /// stack_size when it started to compile the current instruction.
     stack_size_for_pc: u8,
 
-    /// Execution context when compilation started
+    /// Control Frame when compilation started
     /// This allows us to peek at run-time values
-    ec: EcPtr,
+    cfp: CfpPtr,
 
     /// The outgoing branches the block will have
     pub pending_outgoing: Vec<PendingBranchRef>,
@@ -100,7 +100,7 @@ pub struct JITState {
 }
 
 impl JITState {
-    pub fn new(blockid: BlockId, starting_ctx: Context, output_ptr: CodePtr, ec: EcPtr) -> Self {
+    pub fn new(blockid: BlockId, starting_ctx: Context, output_ptr: CodePtr, cfp: CfpPtr) -> Self {
         JITState {
             iseq: blockid.iseq,
             starting_insn_idx: blockid.idx,
@@ -111,7 +111,7 @@ impl JITState {
             pc: ptr::null_mut::<VALUE>(),
             stack_size_for_pc: starting_ctx.get_stack_size(),
             pending_outgoing: vec![],
-            ec,
+            cfp,
             record_boundary_patch_point: false,
             block_entry_exit: None,
             method_lookup_assumptions: vec![],
@@ -220,7 +220,7 @@ impl JITState {
     }
 
     fn get_cfp(&self) -> *mut rb_control_frame_struct {
-        unsafe { get_ec_cfp(self.ec) }
+        return self.cfp as *mut rb_control_frame_struct;
     }
 
     pub fn assume_stable_constant_names(&mut self, asm: &mut Assembler, ocb: &mut OutlinedCb, id: *const ID) {
@@ -762,7 +762,7 @@ fn jump_to_next_insn(
 pub fn gen_single_block(
     blockid: BlockId,
     start_ctx: &Context,
-    ec: EcPtr,
+    cfp: CfpPtr,
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
 ) -> Result<BlockRef, ()> {
@@ -788,7 +788,7 @@ pub fn gen_single_block(
     let mut insn_idx: IseqIdx = blockid.idx;
 
     // Initialize a JIT state object
-    let mut jit = JITState::new(blockid, ctx.clone(), cb.get_write_ptr(), ec);
+    let mut jit = JITState::new(blockid, ctx.clone(), cb.get_write_ptr(), cfp);
     jit.iseq = blockid.iseq;
 
     // Create a backend assembler instance
@@ -4708,10 +4708,10 @@ fn lookup_cfunc_codegen(def: *const rb_method_definition_t) -> Option<MethodGenF
 }
 
 // Is anyone listening for :c_call and :c_return event currently?
-fn c_method_tracing_currently_enabled(jit: &JITState) -> bool {
+fn c_method_tracing_currently_enabled() -> bool {
     // Defer to C implementation in yjit.c
     unsafe {
-        rb_c_method_tracing_currently_enabled(jit.ec)
+        rb_c_method_tracing_currently_enabled()
     }
 }
 
@@ -4961,7 +4961,7 @@ fn gen_send_cfunc(
         return None;
     }
 
-    if c_method_tracing_currently_enabled(jit) {
+    if c_method_tracing_currently_enabled() {
         // Don't JIT if tracing c_call or c_return
         gen_counter_incr(asm, Counter::send_cfunc_tracing);
         return None;
@@ -6613,7 +6613,7 @@ fn gen_send_general(
                     return None;
                 }
 
-                if c_method_tracing_currently_enabled(jit) {
+                if c_method_tracing_currently_enabled() {
                     // Can't generate code for firing c_call and c_return events
                     // :attr-tracing:
                     // Handling the C method tracing events for attr_accessor
@@ -6656,7 +6656,7 @@ fn gen_send_general(
                 } else if argc != 1 || unsafe { !RB_TYPE_P(comptime_recv, RUBY_T_OBJECT) } {
                     gen_counter_incr(asm, Counter::send_ivar_set_method);
                     return None;
-                } else if c_method_tracing_currently_enabled(jit) {
+                } else if c_method_tracing_currently_enabled() {
                     // Can't generate code for firing c_call and c_return events
                     // See :attr-tracing:
                     gen_counter_incr(asm, Counter::send_cfunc_tracing);

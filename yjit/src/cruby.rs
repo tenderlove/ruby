@@ -301,7 +301,7 @@ pub struct rb_control_frame_struct {
 }
 
 /// Pointer to a control frame pointer (CFP)
-pub type CfpPtr = *mut rb_control_frame_struct;
+pub type CfpPtr = *const rb_control_frame_struct;
 
 /// Opaque struct from vm_core.h
 #[repr(C)]
