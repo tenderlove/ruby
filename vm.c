@@ -413,8 +413,18 @@ jit_exec(rb_execution_context_t *ec)
 {
     rb_jit_func_t func = jit_compile(ec);
     if (func) {
+        CFP_TAG_JIT_FRAME(ec->cfp);
+        rb_control_frame_t * now = ec->cfp;
         // Call the JIT code
-        return func(ec, ec->cfp);
+        VALUE ret = func(ec, ec->cfp);
+        if (ret == Qundef) {
+            while (now <= ec->cfp) {
+                CFP_UNTAG_JIT_FRAME(now);
+                now++;
+            }
+            CFP_UNTAG_JIT_FRAME(ec->cfp);
+        }
+        return ret;
     }
     else {
         return Qundef;

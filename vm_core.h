@@ -820,8 +820,10 @@ typedef struct rb_control_frame_struct {
     void *jit_return;
 } rb_control_frame_t;
 
-#define CFP_ISEQ(cfp) ((const rb_iseq_t *)((uintptr_t)cfp->iseq & (((uint64_t)-1) << 1)))
+#define CFP_ISEQ(cfp) ((const rb_iseq_t *)((uintptr_t)cfp->iseq & (((uintptr_t)-1) << 1)))
 #define SET_CFP_ISEQ(_cfp, _iseq) (_cfp->iseq = (const rb_iseq_t *)((uintptr_t)_iseq | 0x1))
+#define CFP_TAG_JIT_FRAME(_cfp) (_cfp->iseq = (const rb_iseq_t *)((uintptr_t)_cfp->iseq & ((uintptr_t)-1 << 1)))
+#define CFP_UNTAG_JIT_FRAME(_cfp) (_cfp->iseq = CFP_ISEQ(_cfp))
 
 extern const rb_data_type_t ruby_threadptr_data_type;
 
@@ -1334,6 +1336,12 @@ static inline int
 VM_FRAME_RUBYFRAME_P(const rb_control_frame_t *cfp)
 {
     return !VM_FRAME_CFRAME_P(cfp);
+}
+
+static inline bool
+VM_FRAME_JITFRAME_P(const rb_control_frame_t *cfp)
+{
+    return !((uintptr_t)cfp->iseq & 0x1);
 }
 
 #define RUBYVM_CFUNC_FRAME_P(cfp) \

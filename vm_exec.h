@@ -177,7 +177,9 @@ default:                        \
 #define JIT_EXEC(ec, val) do { \
     rb_jit_func_t func; \
     if (val == Qundef && (func = jit_compile(ec))) { \
+        CFP_TAG_JIT_FRAME(ec->cfp); \
         val = func(ec, ec->cfp); \
+        if (val == Qundef) CFP_UNTAG_JIT_FRAME(ec->cfp); \
         RESTORE_REGS(); /* fix cfp for tailcall */ \
         if (ec->tag->state) THROW_EXCEPTION(val); \
     } \

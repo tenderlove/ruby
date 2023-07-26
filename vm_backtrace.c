@@ -1613,7 +1613,19 @@ rb_profile_frames(int start, int limit, VALUE *buff, int *lines)
                 buff[i] = (VALUE)CFP_ISEQ(cfp);
             }
 
-            if (lines) lines[i] = calc_lineno(CFP_ISEQ(cfp), cfp->pc);
+            if (lines) {
+                if (VM_FRAME_JITFRAME_P(cfp)) {
+                    lines[i] = -1;
+                }
+                else {
+                    if (cfp->pc != 0) {
+                        lines[i] = calc_lineno(CFP_ISEQ(cfp), cfp->pc);
+                    }
+                    else {
+                        lines[i] = 0;
+                    }
+                }
+            }
 
             i++;
         }
