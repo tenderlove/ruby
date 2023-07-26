@@ -178,8 +178,15 @@ default:                        \
     rb_jit_func_t func; \
     if (val == Qundef && (func = jit_compile(ec))) { \
         CFP_TAG_JIT_FRAME(ec->cfp); \
+        rb_control_frame_t * now = ec->cfp; \
         val = func(ec, ec->cfp); \
-        if (val == Qundef) CFP_UNTAG_JIT_FRAME(ec->cfp); \
+        if (val == Qundef) { \
+          CFP_UNTAG_JIT_FRAME(ec->cfp); \
+          while (now <= ec->cfp) { \
+                CFP_UNTAG_JIT_FRAME(now); \
+                now++; \
+          } \
+        } \
         RESTORE_REGS(); /* fix cfp for tailcall */ \
         if (ec->tag->state) THROW_EXCEPTION(val); \
     } \
