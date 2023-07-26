@@ -1297,7 +1297,7 @@ rb_jit_cont_each_iseq(rb_iseq_callback callback, void *data)
         const rb_control_frame_t *cfp;
         for (cfp = RUBY_VM_END_CONTROL_FRAME(cont->ec) - 1; ; cfp = RUBY_VM_NEXT_CONTROL_FRAME(cfp)) {
             const rb_iseq_t *iseq;
-            if (cfp->pc && (iseq = cfp->iseq) != NULL && imemo_type((VALUE)iseq) == imemo_iseq) {
+            if (cfp->pc && (iseq = CFP_ISEQ(cfp)) != NULL && imemo_type((VALUE)iseq) == imemo_iseq) {
                 callback(iseq, data);
             }
 

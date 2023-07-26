@@ -768,7 +768,7 @@ rb_get_ec_cfp(const rb_execution_context_t *ec)
 const rb_iseq_t *
 rb_get_cfp_iseq(struct rb_control_frame_struct *cfp)
 {
-    return cfp->iseq;
+    return CFP_ISEQ(cfp);
 }
 
 VALUE *
@@ -799,7 +799,7 @@ rb_iseq_t *
 rb_cfp_get_iseq(struct rb_control_frame_struct *cfp)
 {
     // TODO(alan) could assert frame type here to make sure that it's a ruby frame with an iseq.
-    return (rb_iseq_t*)cfp->iseq;
+    return (rb_iseq_t*)CFP_ISEQ(cfp);
 }
 
 VALUE

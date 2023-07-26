@@ -1716,7 +1716,7 @@ eval_string_with_cref(VALUE self, VALUE src, rb_cref_t *cref, VALUE file, int li
 
     block.as.captured = *VM_CFP_TO_CAPTURED_BLOCK(cfp);
     block.as.captured.self = self;
-    block.as.captured.code.iseq = cfp->iseq;
+    block.as.captured.code.iseq = CFP_ISEQ(cfp);
     block.type = block_type_iseq;
 
     iseq = eval_make_iseq(src, file, line, NULL, &block);
@@ -2449,9 +2449,9 @@ rb_f_local_variables(VALUE _)
 
     local_var_list_init(&vars);
     while (cfp) {
-        if (cfp->iseq) {
-            for (i = 0; i < ISEQ_BODY(cfp->iseq)->local_table_size; i++) {
-                local_var_list_add(&vars, ISEQ_BODY(cfp->iseq)->local_table[i]);
+        if (CFP_ISEQ(cfp)) {
+            for (i = 0; i < ISEQ_BODY(CFP_ISEQ(cfp))->local_table_size; i++) {
+                local_var_list_add(&vars, ISEQ_BODY(CFP_ISEQ(cfp))->local_table[i]);
             }
         }
         if (!VM_ENV_LOCAL_P(cfp->ep)) {
@@ -2525,10 +2525,10 @@ rb_current_realfilepath(void)
     rb_control_frame_t *cfp = ec->cfp;
     cfp = vm_get_ruby_level_caller_cfp(ec, RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp));
     if (cfp != NULL) {
-        VALUE path = rb_iseq_realpath(cfp->iseq);
+        VALUE path = rb_iseq_realpath(CFP_ISEQ(cfp));
         if (RTEST(path)) return path;
         // eval context
-        path = rb_iseq_path(cfp->iseq);
+        path = rb_iseq_path(CFP_ISEQ(cfp));
         if (path == eval_default_path) {
             return Qnil;
         }

@@ -820,6 +820,9 @@ typedef struct rb_control_frame_struct {
     void *jit_return;
 } rb_control_frame_t;
 
+#define CFP_ISEQ(cfp) ((const rb_iseq_t *)((uintptr_t)cfp->iseq & (((uint64_t)-1) << 1)))
+#define SET_CFP_ISEQ(_cfp, _iseq) (_cfp->iseq = (const rb_iseq_t *)((uintptr_t)_iseq | 0x1))
+
 extern const rb_data_type_t ruby_threadptr_data_type;
 
 static inline struct rb_thread_struct *
@@ -1322,7 +1325,7 @@ static inline int
 VM_FRAME_CFRAME_P(const rb_control_frame_t *cfp)
 {
     int cframe_p = VM_ENV_FLAGS(cfp->ep, VM_FRAME_FLAG_CFRAME) != 0;
-    VM_ASSERT(RUBY_VM_NORMAL_ISEQ_P(cfp->iseq) != cframe_p ||
+    VM_ASSERT(RUBY_VM_NORMAL_ISEQ_P(CFP_ISEQ(cfp)) != cframe_p ||
               (VM_FRAME_TYPE(cfp) & VM_FRAME_MAGIC_MASK) == VM_FRAME_MAGIC_DUMMY);
     return cframe_p;
 }

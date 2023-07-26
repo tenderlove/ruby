@@ -104,8 +104,8 @@ calc_node_id(const rb_iseq_t *iseq, const VALUE *pc)
 int
 rb_vm_get_sourceline(const rb_control_frame_t *cfp)
 {
-    if (VM_FRAME_RUBYFRAME_P(cfp) && cfp->iseq) {
-        const rb_iseq_t *iseq = cfp->iseq;
+    if (VM_FRAME_RUBYFRAME_P(cfp) && CFP_ISEQ(cfp)) {
+        const rb_iseq_t *iseq = CFP_ISEQ(cfp);
         int line = calc_lineno(iseq, cfp->pc);
         if (line != 0) {
             return line;
@@ -565,7 +565,7 @@ is_internal_location(const rb_control_frame_t *cfp)
 {
     static const char prefix[] = "<internal:";
     const size_t prefix_len = sizeof(prefix) - 1;
-    VALUE file = rb_iseq_path(cfp->iseq);
+    VALUE file = rb_iseq_path(CFP_ISEQ(cfp));
     return strncmp(prefix, RSTRING_PTR(file), prefix_len) == 0;
 }
 
@@ -634,13 +634,13 @@ rb_ec_partial_backtrace_object(const rb_execution_context_t *ec, long start_fram
     }
 
     for (; cfp != end_cfp && (bt->backtrace_size < num_frames); cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
-        if (cfp->iseq) {
+        if (CFP_ISEQ(cfp)) {
             if (cfp->pc) {
                 if (start_frame > 0) {
                     start_frame--;
                 }
                 else if (!skip_internal || !is_internal_location(cfp)) {
-                    const rb_iseq_t *iseq = cfp->iseq;
+                    const rb_iseq_t *iseq = CFP_ISEQ(cfp);
                     const VALUE *pc = cfp->pc;
                     loc = &bt->backtrace[bt->backtrace_size++];
                     loc->type = LOCATION_TYPE_ISEQ;
@@ -672,9 +672,9 @@ rb_ec_partial_backtrace_object(const rb_execution_context_t *ec, long start_fram
 
     if (cfunc_counter > 0) {
         for (; cfp != end_cfp; cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
-            if (cfp->iseq && cfp->pc && (!skip_internal || !is_internal_location(cfp))) {
-                bt_update_cfunc_loc(cfunc_counter, loc, cfp->iseq, cfp->pc);
-                RB_OBJ_WRITTEN(btobj, Qundef, cfp->iseq);
+            if (CFP_ISEQ(cfp) && cfp->pc && (!skip_internal || !is_internal_location(cfp))) {
+                bt_update_cfunc_loc(cfunc_counter, loc, CFP_ISEQ(cfp), cfp->pc);
+                RB_OBJ_WRITTEN(btobj, Qundef, CFP_ISEQ(cfp));
                 if (do_yield) {
                     bt_yield_loc(loc - cfunc_counter, cfunc_counter, btobj);
                 }
@@ -920,7 +920,7 @@ backtrace_each(const rb_execution_context_t *ec,
     /* SDR(); */
     for (i=0, cfp = start_cfp; i<size; i++, cfp = RUBY_VM_NEXT_CONTROL_FRAME(cfp)) {
         /* fprintf(stderr, "cfp: %d\n", (rb_control_frame_t *)(ec->vm_stack + ec->vm_stack_size) - cfp); */
-        if (cfp->iseq) {
+        if (CFP_ISEQ(cfp)) {
             if (cfp->pc) {
                 iter_iseq(arg, cfp);
             }
@@ -953,7 +953,7 @@ oldbt_init(void *ptr, size_t dmy)
 static void
 oldbt_iter_iseq(void *ptr, const rb_control_frame_t *cfp)
 {
-    const rb_iseq_t *iseq = cfp->iseq;
+    const rb_iseq_t *iseq = CFP_ISEQ(cfp);
     const VALUE *pc = cfp->pc;
     struct oldbt_arg *arg = (struct oldbt_arg *)ptr;
     VALUE file = arg->filename = rb_iseq_path(iseq);
@@ -1427,7 +1427,7 @@ collect_caller_bindings_iseq(void *arg, const rb_control_frame_t *cfp)
     rb_ary_store(frame, CALLER_BINDING_SELF, cfp->self);
     rb_ary_store(frame, CALLER_BINDING_CLASS, get_klass(cfp));
     rb_ary_store(frame, CALLER_BINDING_BINDING, GC_GUARDED_PTR(cfp)); /* create later */
-    rb_ary_store(frame, CALLER_BINDING_ISEQ, cfp->iseq ? (VALUE)cfp->iseq : Qnil);
+    rb_ary_store(frame, CALLER_BINDING_ISEQ, CFP_ISEQ(cfp) ? (VALUE)CFP_ISEQ(cfp) : Qnil);
     rb_ary_store(frame, CALLER_BINDING_CFP, GC_GUARDED_PTR(cfp));
     rb_ary_store(frame, CALLER_BINDING_DEPTH, INT2FIX(frame_depth(data->ec, cfp)));
 
@@ -1610,10 +1610,10 @@ rb_profile_frames(int start, int limit, VALUE *buff, int *lines)
                 buff[i] = (VALUE)cme;
             }
             else {
-                buff[i] = (VALUE)cfp->iseq;
+                buff[i] = (VALUE)CFP_ISEQ(cfp);
             }
 
-            if (lines) lines[i] = calc_lineno(cfp->iseq, cfp->pc);
+            if (lines) lines[i] = calc_lineno(CFP_ISEQ(cfp), cfp->pc);
 
             i++;
         }

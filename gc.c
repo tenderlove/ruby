@@ -2417,8 +2417,8 @@ gc_event_hook_body(rb_execution_context_t *ec, rb_objspace_t *objspace, const rb
     if (UNLIKELY(!ec->cfp)) return;
     const VALUE *pc = ec->cfp->pc;
     if (pc && VM_FRAME_RUBYFRAME_P(ec->cfp)) {
-        int prev_opcode = rb_vm_insn_addr2opcode((void *)*ec->cfp->iseq->body->iseq_encoded);
-        for (const VALUE *insn = ec->cfp->iseq->body->iseq_encoded; insn < pc; insn += rb_insn_len(prev_opcode)) {
+        int prev_opcode = rb_vm_insn_addr2opcode((void *)*CFP_ISEQ(ec->cfp)->body->iseq_encoded);
+        for (const VALUE *insn = CFP_ISEQ(ec->cfp)->body->iseq_encoded; insn < pc; insn += rb_insn_len(prev_opcode)) {
             prev_opcode = rb_vm_insn_addr2opcode((void *)*insn);
         }
 
