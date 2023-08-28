@@ -222,8 +222,7 @@ srcs: yarp/api_node.c
 yarp/api_node.c: $(YARP_SRCDIR)/config.yml $(YARP_SRCDIR)/templates/template.rb $(YARP_SRCDIR)/templates/ext/yarp/api_node.c.erb
 	$(Q) $(BASERUBY) $(YARP_SRCDIR)/templates/template.rb ext/yarp/api_node.c $@
 
-yarp/yarp.h: yarp/ast.h
-
+prereq: yarp/ast.h
 srcs: yarp/ast.h
 yarp/ast.h: $(YARP_SRCDIR)/config.yml $(YARP_SRCDIR)/templates/template.rb $(YARP_SRCDIR)/templates/include/yarp/ast.h.erb
 	$(Q) $(BASERUBY) $(YARP_SRCDIR)/templates/template.rb include/yarp/ast.h $@
