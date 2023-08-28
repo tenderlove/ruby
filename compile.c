@@ -43,6 +43,9 @@
 #include "builtin.h"
 #include "insns.inc"
 #include "insns_info.inc"
+#include "yarp/yarp.h"
+
+VALUE rb_iseq_compile_yarp_node(rb_iseq_t * iseq, const yp_node_t * yarp_pointer);
 
 #undef RUBY_UNTYPED_DATA_WARNING
 #define RUBY_UNTYPED_DATA_WARNING 0

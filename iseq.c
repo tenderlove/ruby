@@ -43,6 +43,9 @@
 #include "builtin.h"
 #include "insns.inc"
 #include "insns_info.inc"
+#include "yarp/yarp.h"
+
+VALUE rb_iseq_compile_yarp_node(rb_iseq_t * iseq, const yp_node_t * yarp_pointer);
 
 VALUE rb_cISeq;
 static VALUE iseqw_new(const rb_iseq_t *iseq);
