@@ -223,7 +223,7 @@ yarp/api_node.c: $(YARP_SRCDIR)/config.yml $(YARP_SRCDIR)/templates/template.rb 
 	$(Q) $(BASERUBY) $(YARP_SRCDIR)/templates/template.rb ext/yarp/api_node.c $@
 
 srcs: yarp/ast.h
-yarp/ast.h: $(YARP_SRCDIR)/config.yml $(YARP_SRCDIR)/templates/template.rb $(YARP_SRCDIR)/templates/include/yarp/ast.h.erb
+{$(VPATH)}yarp/ast.h: $(YARP_SRCDIR)/config.yml $(YARP_SRCDIR)/templates/template.rb $(YARP_SRCDIR)/templates/include/yarp/ast.h.erb
 	$(Q) $(BASERUBY) $(YARP_SRCDIR)/templates/template.rb include/yarp/ast.h $@
 
 srcs: yarp/node.c
