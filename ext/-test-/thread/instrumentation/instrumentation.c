@@ -21,8 +21,12 @@ static VALUE last_thread = Qnil;
 static void
 ex_callback(rb_event_flag_t event, const rb_internal_thread_event_data_t *event_data, void *user_data)
 {
+    VALUE list = rb_thread_local_aref(event_data->thread, rb_intern("events"));
+
     switch (event) {
       case RUBY_INTERNAL_THREAD_EVENT_STARTED:
+        list = rb_ary_new();
+        rb_thread_local_aset(event_data->thread, rb_intern("events"), list);
         last_thread = event_data->thread;
         RUBY_ATOMIC_INC(started_count);
         break;
@@ -42,6 +46,19 @@ ex_callback(rb_event_flag_t event, const rb_internal_thread_event_data_t *event_
         RUBY_ATOMIC_INC(exited_count);
         break;
     }
+
+    if (RTEST(list)) {
+        switch(event) {
+#define COUNT(n) case RUBY_INTERNAL_THREAD_EVENT_##n: rb_ary_push(list, ID2SYM(rb_intern(#n))); break;
+        COUNT(STARTED);
+        COUNT(READY);
+        COUNT(RESUMED);
+        COUNT(SUSPENDED);
+        COUNT(EXITED);
+#undef COUNT
+        }
+    }
+
 }
 
 static rb_internal_thread_event_hook_t * single_hook = NULL;

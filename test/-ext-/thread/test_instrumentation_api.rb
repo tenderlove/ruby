@@ -27,6 +27,23 @@ class TestThreadInstrumentation < Test::Unit::TestCase
 
   THREADS_COUNT = 3
 
+  def test_transitions
+    th = Thread.new do
+      sleep 0.1
+    end
+    th.join
+    transitions = th[:events]
+    len = transitions.length
+
+    # Threads shouldn't transition to the same thing twice
+    len.times do |i|
+      assert_not_equal transitions[i], transitions[i + 1]
+    end
+
+    # Threads should always end with "exited"
+    assert_equal :EXITED, transitions.last
+  end
+
   def test_thread_instrumentation
     threads = threaded_cpu_work
     assert_equal [false] * THREADS_COUNT, threads.map(&:status)
