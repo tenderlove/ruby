@@ -1,3 +1,28 @@
+Feb 28, 2024
+
+* We fixed extensions.
+* We got linux working
+
+Problems:
+
+* librubygc needs "supported versions" on macos
+* Should we be setting the install_name for librubygc?
+  * Is an install name set on Linux?
+  * If so, when?
+  * Aaron: when we compile Ruby on Linux, `ldd` doesn't show a full path
+  to libruby. We should check what `ldd` says on Ruby _after_ we install it
+  (maybe the full path is being set when we install Ruby)
+* `make clean` should delete rubygc.o
+
+Notes:
+
+* We've modified the build system such that librubygc can only be in one C
+  file. This is because compiling librubygc may not use the same compile flags
+  as the other c files in the system. To address this problem, we added a
+  specific make target for rubygc.c. If we want librubygc to use multiple
+  files, we'll have to address this in the future.
+
+
 compile flags in extconf are wrong
 they need to link against librubygc
 * How are hte flags determined
