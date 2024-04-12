@@ -3214,7 +3214,7 @@ vm_call_iseq_setup(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct r
     int local_size = ISEQ_BODY(iseq)->local_table_size;
 
     // Setting up local size and param size
-    if (ISEQ_BODY(iseq)->param.flags.forwardable) {
+    if (UNLIKELY(ISEQ_BODY(iseq)->param.flags.forwardable)) {
         local_size = local_size + vm_ci_argc(calling->cd->ci);
         param_size = param_size + vm_ci_argc(calling->cd->ci);
     }
