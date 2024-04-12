@@ -420,6 +420,7 @@ module RubyVM::RJIT # :nodoc: all
   C::VM_CALL_ARGS_BLOCKARG = Primitive.cexpr! %q{ SIZET2NUM(VM_CALL_ARGS_BLOCKARG) }
   C::VM_CALL_ARGS_SPLAT = Primitive.cexpr! %q{ SIZET2NUM(VM_CALL_ARGS_SPLAT) }
   C::VM_CALL_FCALL = Primitive.cexpr! %q{ SIZET2NUM(VM_CALL_FCALL) }
+  C::VM_CALL_FORWARDING = Primitive.cexpr! %q{ SIZET2NUM(VM_CALL_FORWARDING) }
   C::VM_CALL_KWARG = Primitive.cexpr! %q{ SIZET2NUM(VM_CALL_KWARG) }
   C::VM_CALL_KW_SPLAT = Primitive.cexpr! %q{ SIZET2NUM(VM_CALL_KW_SPLAT) }
   C::VM_CALL_KW_SPLAT_MUT = Primitive.cexpr! %q{ SIZET2NUM(VM_CALL_KW_SPLAT_MUT) }
