@@ -1623,4 +1623,18 @@ class TestMethod < Test::Unit::TestCase
       end
     RUBY
   end
+
+  def test_super_with_splat
+    c = Class.new {
+      attr_reader :x
+
+      def initialize(*args)
+        @x, _ = args
+      end
+    }
+    b = Class.new(c) { def initialize(...) = super }
+    a = Class.new(b) { def initialize(*args) = super }
+    obj = a.new(1, 2, 3)
+    assert_equal 1, obj.x
+  end
 end
