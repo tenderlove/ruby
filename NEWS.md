@@ -44,6 +44,7 @@ The following default gems are updated.
 * irb 1.12.0
 * json 2.7.2
 * net-http 0.4.1
+* optparse 0.5.0
 * prism 0.25.0
 * rdoc 6.6.3.1
 * reline 0.5.1
@@ -111,7 +112,14 @@ See GitHub releases like [GitHub Releases of Logger](https://github.com/ruby/log
 
 ## JIT
 
+## Miscellaneous changes
+
+* Passing a block to a method which doesn't use the passed block will show
+  a warning on verbose mode (`-w`).
+  [[Feature #15554]]
+
 [Feature #13557]: https://bugs.ruby-lang.org/issues/13557
+[Feature #15554]: https://bugs.ruby-lang.org/issues/15554
 [Feature #16495]: https://bugs.ruby-lang.org/issues/16495
 [Feature #18290]: https://bugs.ruby-lang.org/issues/18290
 [Feature #18980]: https://bugs.ruby-lang.org/issues/18980

@@ -418,6 +418,7 @@ struct rb_iseq_constant_body {
             unsigned int ruby2_keywords: 1;
             unsigned int anon_rest: 1;
             unsigned int anon_kwrest: 1;
+            unsigned int use_block: 1;
             unsigned int forwardable: 1;
         } flags;
 
@@ -1201,7 +1202,8 @@ rb_iseq_t *rb_iseq_new_top     (const rb_ast_body_t *ast, VALUE name, VALUE path
 rb_iseq_t *rb_iseq_new_main    (const rb_ast_body_t *ast,             VALUE path, VALUE realpath,                     const rb_iseq_t *parent, int opt);
 rb_iseq_t *rb_iseq_new_eval    (const rb_ast_body_t *ast, VALUE name, VALUE path, VALUE realpath, int first_lineno, const rb_iseq_t *parent, int isolated_depth);
 rb_iseq_t *rb_iseq_new_with_opt(const rb_ast_body_t *ast, VALUE name, VALUE path, VALUE realpath, int first_lineno, const rb_iseq_t *parent, int isolated_depth,
-                                enum rb_iseq_type, const rb_compile_option_t*);
+                                enum rb_iseq_type, const rb_compile_option_t*,
+                                VALUE script_lines);
 
 struct iseq_link_anchor;
 struct rb_iseq_new_with_callback_callback_func {

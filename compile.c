@@ -1483,7 +1483,7 @@ new_child_iseq(rb_iseq_t *iseq, const NODE *const node,
     ast.root = node;
     ast.frozen_string_literal = -1;
     ast.coverage_enabled = -1;
-    ast.script_lines = ISEQ_BODY(iseq)->variable.script_lines;
+    ast.script_lines = NULL;
 
     debugs("[new_child_iseq]> ---------------------------------------\n");
     int isolated_depth = ISEQ_COMPILE_DATA(iseq)->isolated_depth;
@@ -1491,7 +1491,8 @@ new_child_iseq(rb_iseq_t *iseq, const NODE *const node,
                                     rb_iseq_path(iseq), rb_iseq_realpath(iseq),
                                     line_no, parent,
                                     isolated_depth ? isolated_depth + 1 : 0,
-                                    type, ISEQ_COMPILE_DATA(iseq)->option);
+                                    type, ISEQ_COMPILE_DATA(iseq)->option,
+                                    ISEQ_BODY(iseq)->variable.script_lines);
     debugs("[new_child_iseq]< ---------------------------------------\n");
     return ret_iseq;
 }
@@ -2105,10 +2106,12 @@ iseq_set_arguments(rb_iseq_t *iseq, LINK_ANCHOR *const optargs, const NODE *cons
         if (block_id) {
             body->param.block_start = arg_size++;
             body->param.flags.has_block = TRUE;
+            body->param.flags.use_block = 1;
         }
 
         // Only optimize specifically methods like this: `foo(...)`
         if (optimized_forward) {
+            body->param.flags.use_block = 1;
             body->param.flags.forwardable = TRUE;
             arg_size = 1;
         }
@@ -5944,6 +5947,7 @@ defined_expr0(rb_iseq_t *iseq, LINK_ANCHOR *const ret,
         ADD_INSN(ret, line_node, putnil);
         ADD_INSN3(ret, line_node, defined, INT2FIX(DEFINED_YIELD), 0,
                   PUSH_VAL(DEFINED_YIELD));
+        ISEQ_BODY(ISEQ_BODY(iseq)->local_iseq)->param.flags.use_block = 1;
         return;
 
       case NODE_BACK_REF:
@@ -8678,6 +8682,9 @@ compile_builtin_attr(rb_iseq_t *iseq, const NODE *node)
         else if (strcmp(RSTRING_PTR(string), "inline_block") == 0) {
             ISEQ_BODY(iseq)->builtin_attrs |= BUILTIN_ATTR_INLINE_BLOCK;
         }
+        else if (strcmp(RSTRING_PTR(string), "use_block") == 0) {
+            ISEQ_BODY(iseq)->param.flags.use_block = 1;
+        }
         else {
             goto unknown_arg;
         }
@@ -8785,14 +8792,15 @@ compile_builtin_mandatory_only_method(rb_iseq_t *iseq, const NODE *node, const N
         .root = RNODE(&scope_node),
         .frozen_string_literal = -1,
         .coverage_enabled = -1,
-        .script_lines = ISEQ_BODY(iseq)->variable.script_lines,
+        .script_lines = NULL
     };
 
     ISEQ_BODY(iseq)->mandatory_only_iseq =
       rb_iseq_new_with_opt(&ast, rb_iseq_base_label(iseq),
                            rb_iseq_path(iseq), rb_iseq_realpath(iseq),
                            nd_line(line_node), NULL, 0,
-                           ISEQ_TYPE_METHOD, ISEQ_COMPILE_DATA(iseq)->option);
+                           ISEQ_TYPE_METHOD, ISEQ_COMPILE_DATA(iseq)->option,
+                           ISEQ_BODY(iseq)->variable.script_lines);
 
     ALLOCV_END(idtmp);
     return COMPILE_OK;
@@ -9414,15 +9422,21 @@ compile_super(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
     unsigned int flag = 0;
     struct rb_callinfo_kwarg *keywords = NULL;
     const rb_iseq_t *parent_block = ISEQ_COMPILE_DATA(iseq)->current_block;
+    int use_block = 1;
 
     INIT_ANCHOR(args);
     ISEQ_COMPILE_DATA(iseq)->current_block = NULL;
+
     if (type == NODE_SUPER) {
         VALUE vargc = setup_args(iseq, args, RNODE_SUPER(node)->nd_args, &flag, &keywords);
         CHECK(!NIL_P(vargc));
         argc = FIX2INT(vargc);
         if ((flag & VM_CALL_ARGS_BLOCKARG) && (flag & VM_CALL_KW_SPLAT) && !(flag & VM_CALL_KW_SPLAT_MUT)) {
             ADD_INSN(args, node, splatkw);
+        }
+
+        if (flag & VM_CALL_ARGS_BLOCKARG) {
+            use_block = 0;
         }
     }
     else {
@@ -9524,6 +9538,10 @@ compile_super(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
         }
     }
 
+    if (use_block && parent_block == NULL) {
+        ISEQ_BODY(ISEQ_BODY(iseq)->local_iseq)->param.flags.use_block = 1;
+    }
+
     flag |= VM_CALL_SUPER | VM_CALL_FCALL;
     if (type == NODE_ZSUPER) flag |= VM_CALL_ZSUPER;
     ADD_INSN(ret, node, putself);
@@ -9567,6 +9585,7 @@ compile_yield(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
 
     ADD_SEQ(ret, args);
     ADD_INSN1(ret, node, invokeblock, new_callinfo(iseq, 0, FIX2INT(argc), flag, keywords, FALSE));
+    ISEQ_BODY(ISEQ_BODY(iseq)->local_iseq)->param.flags.use_block = 1;
 
     if (popped) {
         ADD_INSN(ret, node, pop);
@@ -12993,7 +13012,10 @@ ibf_dump_iseq_each(struct ibf_dump *dump, const rb_iseq_t *iseq)
         (body->param.flags.ambiguous_param0 << 7) |
         (body->param.flags.accepts_no_kwarg << 8) |
         (body->param.flags.ruby2_keywords   << 9) |
-        (body->param.flags.forwardable     << 10);
+        (body->param.flags.anon_rest        << 10) |
+        (body->param.flags.anon_kwrest      << 11) |
+        (body->param.flags.use_block        << 12) |
+        (body->param.flags.forwardable      << 13) ;
 
 #if IBF_ISEQ_ENABLE_LOCAL_BUFFER
 #  define IBF_BODY_OFFSET(x) (x)
@@ -13207,9 +13229,10 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
     load_body->param.flags.ambiguous_param0 = (param_flags >> 7) & 1;
     load_body->param.flags.accepts_no_kwarg = (param_flags >> 8) & 1;
     load_body->param.flags.ruby2_keywords = (param_flags >> 9) & 1;
-    load_body->param.flags.forwardable = (param_flags >> 10) & 1;
-    load_body->param.flags.anon_rest = (param_flags >> 11) & 1;
-    load_body->param.flags.anon_kwrest = (param_flags >> 12) & 1;
+    load_body->param.flags.anon_rest = (param_flags >> 10) & 1;
+    load_body->param.flags.anon_kwrest = (param_flags >> 11) & 1;
+    load_body->param.flags.use_block = (param_flags >> 12) & 1;
+    load_body->param.flags.forwardable = (param_flags >> 13) & 1;
     load_body->param.size = param_size;
     load_body->param.lead_num = param_lead_num;
     load_body->param.opt_num = param_opt_num;
