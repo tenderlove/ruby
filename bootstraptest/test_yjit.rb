@@ -4754,6 +4754,34 @@ assert_equal 'foo', %q{
   entry(true)
 }
 
+assert_equal ':ok', %q{
+  def ok
+    :ok
+  end
+
+  def delegator(...)
+    ok(...)
+  end
+
+  delegator
+}
+
+assert_equal 'ok', %q{
+  def ok
+    :ok
+  end
+
+  def delegator(...)
+    ok(...)
+  end
+
+  def caller
+    send(:delegator)
+  end
+
+  caller
+}
+
 assert_equal '[:ok, :ok, :ok]', %q{
   def identity(x) = x
   def foo(x, _) = x
