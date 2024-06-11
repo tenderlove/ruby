@@ -370,6 +370,7 @@ ary_heap_free(VALUE ary)
 static size_t
 ary_heap_realloc(VALUE ary, size_t new_capa)
 {
+    RUBY_ASSERT(!OBJ_FROZEN(ary));
     SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, ARY_HEAP_CAPA(ary));
     ary_verify(ary);
 
@@ -639,6 +640,7 @@ ary_ensure_room_for_push(VALUE ary, long add_len)
 VALUE
 rb_ary_freeze(VALUE ary)
 {
+    ary_shrink_capa(ary);
     return rb_obj_freeze(ary);
 }
 
