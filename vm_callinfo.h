@@ -45,6 +45,18 @@ enum vm_call_flag_bits {
 #define VM_CALL_ARGS_SPLAT_MUT  (0x01 << VM_CALL_ARGS_SPLAT_MUT_bit)
 #define VM_CALL_FORWARDING      (0x01 << VM_CALL_FORWARDING_bit)
 
+
+#if (SIZEOF_UINT64_T <= SIZEOF_VALUE)
+typedef uint32_t vm_call_flag_t;
+typedef uint32_t rb_callinfo_argc_t;
+#else
+typedef uint16_t vm_call_flag_t;
+typedef uint16_t rb_callinfo_argc_t;
+#endif
+
+
+RBIMPL_STATIC_ASSERT(VM_CALL__END, VM_CALL__END < (sizeof(vm_call_flag_t) * 8));
+
 struct rb_callinfo_kwarg {
     int keyword_len;
     int references;
@@ -66,8 +78,8 @@ struct rb_callinfo {
     VALUE flags;
     const struct rb_callinfo_kwarg *kwarg;
     VALUE mid;
-    VALUE flag;
-    VALUE argc;
+    vm_call_flag_t flag;
+    rb_callinfo_argc_t argc;
 };
 
 #if !defined(USE_EMBED_CI) || (USE_EMBED_CI+0)
@@ -150,14 +162,14 @@ vm_ci_flag(const struct rb_callinfo *ci)
     }
 }
 
-static inline unsigned int
+static inline rb_callinfo_argc_t
 vm_ci_argc(const struct rb_callinfo *ci)
 {
     if (vm_ci_packed_p(ci)) {
-        return (unsigned int)((((VALUE)ci) >> CI_EMBED_ARGC_SHFT) & CI_EMBED_ARGC_MASK);
+        return (rb_callinfo_argc_t)((((VALUE)ci) >> CI_EMBED_ARGC_SHFT) & CI_EMBED_ARGC_MASK);
     }
     else {
-        return (unsigned int)ci->argc;
+        return (rb_callinfo_argc_t)ci->argc;
     }
 }
 
@@ -291,6 +303,10 @@ struct rb_callcache {
         struct {
           uintptr_t value; // Shape ID in upper bits, index in lower bits
         } attr;
+        struct {
+          vm_call_flag_t flags;
+          rb_callinfo_argc_t argc;
+        } callinfo;
         const enum method_missing_reason method_missing_reason; /* used by method_missing */
         VALUE v;
         const struct rb_builtin_function *bf;
@@ -305,6 +321,7 @@ struct rb_callcache {
 #define VM_CALLCACHE_BF         IMEMO_FL_USER1
 #define VM_CALLCACHE_SUPER      IMEMO_FL_USER2
 #define VM_CALLCACHE_REFINEMENT IMEMO_FL_USER3
+#define VM_CALLCACHE_ISEQ       IMEMO_FL_USER4
 
 enum vm_cc_type {
     cc_type_normal, // chained from ccs
@@ -325,13 +342,21 @@ vm_cc_attr_index_initialize(const struct rb_callcache *cc, shape_id_t shape_id)
     vm_cc_attr_index_set(cc, (attr_index_t)-1, shape_id);
 }
 
+static inline void
+set_vm_cc_iseq(const struct rb_callcache *cc)
+{
+    *(VALUE *)&cc->flags |= VM_CALLCACHE_ISEQ;
+}
+
 static inline const struct rb_callcache *
 vm_cc_new(VALUE klass,
           const struct rb_callable_method_entry_struct *cme,
           vm_call_handler call,
-          enum vm_cc_type type)
+          enum vm_cc_type type,
+          const struct rb_callinfo *ci)
 {
     struct rb_callcache *cc = IMEMO_NEW(struct rb_callcache, imemo_callcache, klass);
+
     *((struct rb_callable_method_entry_struct **)&cc->cme_) = (struct rb_callable_method_entry_struct *)cme;
     *((vm_call_handler *)&cc->call_) = call;
 
@@ -350,6 +375,12 @@ vm_cc_new(VALUE klass,
 
     if (cme->def->type == VM_METHOD_TYPE_ATTRSET || cme->def->type == VM_METHOD_TYPE_IVAR) {
         vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
+    }
+
+    if (cme->def->type == VM_METHOD_TYPE_ISEQ) {
+        set_vm_cc_iseq(cc);
+        cc->aux_.callinfo.flags = vm_ci_flag(ci);
+        cc->aux_.callinfo.argc = vm_ci_argc(ci);
     }
 
     RB_DEBUG_COUNTER_INC(cc_new);
@@ -489,6 +520,12 @@ set_vm_cc_ivar(const struct rb_callcache *cc)
 }
 
 static inline void
+clear_vm_cc_iseq(const struct rb_callcache *cc)
+{
+    *(VALUE *)&cc->flags &= ~VM_CALLCACHE_ISEQ;
+}
+
+static inline void
 vm_cc_attr_index_set(const struct rb_callcache *cc, attr_index_t index, shape_id_t dest_shape_id)
 {
     uintptr_t *attr_value = (uintptr_t *)&cc->aux_.attr.value;
@@ -508,6 +545,12 @@ vm_cc_ivar_p(const struct rb_callcache *cc)
     return (cc->flags & VM_CALLCACHE_IVAR) != 0;
 }
 
+static inline bool
+vm_cc_iseq_p(const struct rb_callcache *cc)
+{
+    return (cc->flags & VM_CALLCACHE_ISEQ) != 0;
+}
+
 static inline void
 vm_ic_attr_index_set(const rb_iseq_t *iseq, const struct iseq_inline_iv_cache_entry *ic, attr_index_t index, shape_id_t dest_shape_id)
 {
@@ -525,6 +568,7 @@ vm_cc_method_missing_reason_set(const struct rb_callcache *cc, enum method_missi
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
+    clear_vm_cc_iseq(cc);
     *(enum method_missing_reason *)&cc->aux_.method_missing_reason = reason;
 }
 
@@ -533,6 +577,7 @@ vm_cc_bf_set(const struct rb_callcache *cc, const struct rb_builtin_function *bf
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
+    clear_vm_cc_iseq(cc);
     *(const struct rb_builtin_function **)&cc->aux_.bf = bf;
     *(VALUE *)&cc->flags |= VM_CALLCACHE_BF;
 }

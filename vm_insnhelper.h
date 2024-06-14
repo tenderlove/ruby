@@ -259,6 +259,7 @@ THROW_DATA_CONSUMED_SET(struct vm_throw_data *obj)
 #define IS_ARGS_KW_SPLAT(ci)       (vm_ci_flag(ci) & VM_CALL_KW_SPLAT)
 #define IS_ARGS_KW_OR_KW_SPLAT(ci) (vm_ci_flag(ci) & (VM_CALL_KWARG | VM_CALL_KW_SPLAT))
 #define IS_ARGS_KW_SPLAT_MUT(ci)   (vm_ci_flag(ci) & VM_CALL_KW_SPLAT_MUT)
+#define IS_SUPER(ci)               (vm_ci_flag(ci) & VM_CALL_SUPER)
 
 static inline bool
 vm_call_cacheable(const struct rb_callinfo *ci, const struct rb_callcache *cc)
