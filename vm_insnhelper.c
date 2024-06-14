@@ -2280,10 +2280,20 @@ vm_search_method_fastpath(VALUE cd_owner, struct rb_call_data *cd, VALUE klass)
             rb_callinfo_argc_t argc = vm_ci_argc(cd->ci);
 
             cc = gccct_method_search_klass(GET_EC(), klass, mid, cd->ci);
-            if (LIKELY(vm_cc_iseq_p(cc) &&
-                        cc->aux_.callinfo.flags == flags &&
-                        cc->aux_.callinfo.argc == argc)) {
-                //RUBY_ASSERT(cc == vm_search_method_slowpath0(cd_owner, cd, klass));
+
+            if (vm_cc_iseq_p(cc) &&
+                    cc->aux_.callinfo.flags == flags &&
+                    cc->aux_.callinfo.argc == argc) {
+
+                RUBY_ASSERT(cc == vm_search_method_slowpath0(cd_owner, cd, klass));
+
+                cd->cc = cc;
+
+                const struct rb_callcache *empty_cc = &vm_empty_cc;
+                if (cc != empty_cc) {
+                    RB_OBJ_WRITTEN(cd_owner, Qundef, cc);
+                }
+
                 return cc;
             }
         }
