@@ -3167,11 +3167,13 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
             if (LIKELY(!(vm_ci_flag(ci) & VM_CALL_TAILCALL))) {
                 CC_SET_FASTPATH(cc, vm_call_iseq_setup_normal_opt_start,
                                 !IS_ARGS_SPLAT(ci) && !IS_ARGS_KEYWORD(ci) &&
+                                !IS_FORWARDING(ci) &&
                                 vm_call_cacheable(ci, cc));
             }
             else {
                 CC_SET_FASTPATH(cc, vm_call_iseq_setup_tailcall_opt_start,
                                 !IS_ARGS_SPLAT(ci) && !IS_ARGS_KEYWORD(ci) &&
+                                !IS_FORWARDING(ci) &&
                                 vm_call_cacheable(ci, cc));
             }
 
@@ -3200,7 +3202,7 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
                     args_setup_kw_parameters(ec, iseq, ci_kws, ci_kw_len, ci_keywords, klocals);
 
                     CC_SET_FASTPATH(cc, vm_call_iseq_setup_kwparm_kwarg,
-                                    vm_call_cacheable(ci, cc));
+                                    !IS_FORWARDING(ci) && vm_call_cacheable(ci, cc));
 
                     return 0;
                 }
@@ -3213,7 +3215,7 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
                 if (klocals[kw_param->num] == INT2FIX(0)) {
                     /* copy from default_values */
                     CC_SET_FASTPATH(cc, vm_call_iseq_setup_kwparm_nokwarg,
-                                    vm_call_cacheable(ci, cc));
+                                    !IS_FORWARDING(ci) && vm_call_cacheable(ci, cc));
                 }
 
                 return 0;
