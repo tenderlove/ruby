@@ -7175,6 +7175,14 @@ fn gen_send_iseq(
     let num_params = unsafe { get_iseq_body_param_size(iseq) as i32 };
     let num_locals = unsafe { get_iseq_body_local_table_size(iseq) as i32 };
 
+    // Fall back when the callee takes leading positional parameters as
+    // well as the forwarding parameter. For example when calling a method
+    // that is defined like this: `def foo(a, b, ...); end`
+    if forwarding && num_params > 1 {
+        gen_counter_incr(jit, asm, Counter::send_iseq_send_forwarding);
+        return None;
+    }
+
     let mut start_pc_offset: u16 = 0;
     let required_num = unsafe { get_iseq_body_param_lead_num(iseq) };
 
@@ -7766,6 +7774,10 @@ fn gen_send_iseq(
     }
 
     if forwarding {
+        // For now YJIT only supports callees that _only_ take `...` as the
+        // only parameter. Other cases need to rotate the stack and that seems
+        // too complex for YJIT, so we should be falling back earlier in this
+        // method.
         assert_eq!(1, num_params);
         // Write the CI in to the stack and ensure that it actually gets
         // flushed to memory

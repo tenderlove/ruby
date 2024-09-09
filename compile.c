@@ -6367,6 +6367,7 @@ setup_args_core(rb_iseq_t *iseq, LINK_ANCHOR *const args, const NODE *argn,
             }
             else if (forwarding_node_p(RNODE_ARGSPUSH(argn)->nd_body)) { /* last node is ... */
                 *flag_ptr |= VM_CALL_FORWARDING;
+                argc += 1;
                 NO_CHECK(COMPILE(args, "forwarding", RNODE_ARGSPUSH(argn)->nd_body));
             }
             else {

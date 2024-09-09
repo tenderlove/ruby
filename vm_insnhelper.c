@@ -2976,6 +2976,28 @@ vm_call_iseq_forwardable(rb_execution_context_t *ec, rb_control_frame_t *cfp,
     // Setting up local size and param size
     VM_ASSERT(ISEQ_BODY(iseq)->param.flags.forwardable);
 
+    // We need to rotate the stack so that the local table exists in
+    // the right location.  For example:
+    //
+    //   def foo(a, b, ...)
+    //   end
+    //   foo("a", "b", "c", "d")
+    //
+    // Before calling to foo, the stack will be:
+    //
+    //      "a",    "b",    "c",     "d",
+    //   EP[-4], EP[-3], EP[-2],  EP[-1],
+    //
+    // Locals are negative indexes relative to the EP, but if local `a` is
+    // mapped to -2, then the local `a` would be mistakenly mapped to the string
+    // "c".  We rotate "c" and "d" to be above "a" and "b" so that the local
+    // indexes for `a` and `b` are correct:
+    //
+    //      "c",    "d",    "a",     "b",
+    //   EP[-4], EP[-3], EP[-2],  EP[-1],
+    //
+    // Now the indexes for the local table in the callee map correctly to the
+    // stack layout
     stack_rotate(cfp->sp - vm_ci_argc(calling->cd->ci), vm_ci_argc(calling->cd->ci), param_size - 1);
 
     param_size = vm_ci_argc(calling->cd->ci) + 1;
