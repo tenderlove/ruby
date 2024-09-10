@@ -2729,6 +2729,19 @@ thread_raise_m(int argc, VALUE *argv, VALUE self)
 }
 
 
+VALUE
+rb_thread_stack_size(VALUE thread)
+{
+    pthread_attr_t attr;
+    size_t size;
+
+    pthread_getattr_np(pthread_self(), &attr);
+
+    pthread_attr_getstacksize(&attr, &size);
+
+    return ULONG2NUM(size);
+}
+
 /*
  *  call-seq:
  *     thr.exit        -> thr
@@ -5439,6 +5452,7 @@ Init_Thread(void)
     rb_define_method(rb_cThread, "kill", rb_thread_kill, 0);
     rb_define_method(rb_cThread, "terminate", rb_thread_kill, 0);
     rb_define_method(rb_cThread, "exit", rb_thread_kill, 0);
+    rb_define_singleton_method(rb_cThread, "stack_size", rb_thread_stack_size, 0);
     rb_define_method(rb_cThread, "run", rb_thread_run, 0);
     rb_define_method(rb_cThread, "wakeup", rb_thread_wakeup, 0);
     rb_define_method(rb_cThread, "[]", rb_thread_aref, 1);
