@@ -268,7 +268,16 @@ RB_STATIC_SYM_P(VALUE obj)
 {
     RBIMPL_ATTR_CONSTEXPR(CXX14)
     const VALUE mask = ~(RBIMPL_VALUE_FULL << RUBY_SPECIAL_SHIFT);
-    return (obj & mask) == RUBY_SYMBOL_FLAG;
+    /*
+    if ((obj & mask) == RUBY_SYMBOL_FLAG) {
+        if ((uintptr_t)obj > 0xFFFF) {
+            RUBY_ASSERT(obj & (1 << RUBY_SPECIAL_SHIFT));
+        }
+    }
+    */
+    return (obj & mask) == RUBY_SYMBOL_FLAG &&
+        (((uintptr_t)obj < (1 << 16)) ||
+          (obj & (1 << RUBY_SPECIAL_SHIFT)));
 }
 
 RBIMPL_ATTR_CONST()
