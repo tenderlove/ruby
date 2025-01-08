@@ -1412,6 +1412,12 @@ rb_iseq_method_name(const rb_iseq_t *iseq)
     }
 }
 
+int
+rb_iseq_location_id(const rb_iseq_t *iseq)
+{
+    return ISEQ_BODY(iseq)->location.node_id;
+}
+
 void
 rb_iseq_code_location(const rb_iseq_t *iseq, int *beg_pos_lineno, int *beg_pos_column, int *end_pos_lineno, int *end_pos_column)
 {
@@ -2019,6 +2025,12 @@ static VALUE
 iseqw_label(VALUE self)
 {
     return rb_iseq_label(iseqw_check(self));
+}
+
+static VALUE
+iseqw_location_id(VALUE self)
+{
+    return INT2NUM(rb_iseq_location_id(iseqw_check(self)));
 }
 
 /*  Returns the base label of this instruction sequence.
@@ -4361,6 +4373,7 @@ Init_ISeq(void)
     rb_define_method(rb_cISeq, "first_lineno", iseqw_first_lineno, 0);
     rb_define_method(rb_cISeq, "trace_points", iseqw_trace_points, 0);
     rb_define_method(rb_cISeq, "each_child", iseqw_each_child, 0);
+    rb_define_method(rb_cISeq, "node_id", iseqw_location_id, 0);
 
 #if 0 /* TBD */
     rb_define_private_method(rb_cISeq, "marshal_dump", iseqw_marshal_dump, 0);
