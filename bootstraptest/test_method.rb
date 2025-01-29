@@ -1395,3 +1395,12 @@ assert_equal 'ok', %q{
   no_args
   splat_args
 }
+
+assert_equal 'ok', %q{
+def foo(...)
+  _a  = "ok"
+  binding.local_variable_get(:_a)
+end
+
+foo([])
+}
