@@ -9542,10 +9542,10 @@ fn gen_sendforward(
     let blockiseq = jit.get_arg(1).as_iseq();
     gen_send_dynamic(jit, asm, cd, unsafe { rb_yjit_sendish_sp_pops((*cd).ci) }, |asm| {
         extern "C" {
-            fn rb_vm_send(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
+            fn rb_vm_send_forward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
         }
         asm.ccall(
-            rb_vm_send as *const u8,
+            rb_vm_send_forward as *const u8,
             vec![EC, CFP, (cd as usize).into(), VALUE(blockiseq as usize).into()],
         )
     })
