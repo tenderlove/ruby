@@ -9010,11 +9010,7 @@ fn gen_send_general(
 
     let ci_flags = unsafe { vm_ci_flag(ci) };
 
-    // Dynamic stack layout. No good way to support without inlining.
-    if ci_flags & VM_CALL_FORWARDING != 0 {
-        gen_counter_incr(jit, asm, Counter::send_forwarding);
-        return None;
-    }
+    assert!(ci_flags & VM_CALL_FORWARDING == 0);
 
     let recv_idx = argc + if flags & VM_CALL_ARGS_BLOCKARG != 0 { 1 } else { 0 };
     let comptime_recv = jit.peek_at_stack(&asm.ctx, recv_idx as isize);
@@ -9537,7 +9533,22 @@ fn gen_sendforward(
     jit: &mut JITState,
     asm: &mut Assembler,
 ) -> Option<CodegenStatus> {
-    return gen_send(jit, asm);
+    let cd = jit.get_arg(0).as_ptr();
+
+    // Dynamic stack layout. No good way to support without inlining.
+    gen_counter_incr(jit, asm, Counter::send_forwarding);
+
+    // Otherwise, fallback to dynamic dispatch using the interpreter's implementation of send
+    let blockiseq = jit.get_arg(1).as_iseq();
+    gen_send_dynamic(jit, asm, cd, unsafe { rb_yjit_sendish_sp_pops((*cd).ci) }, |asm| {
+        extern "C" {
+            fn rb_vm_send(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
+        }
+        asm.ccall(
+            rb_vm_send as *const u8,
+            vec![EC, CFP, (cd as usize).into(), VALUE(blockiseq as usize).into()],
+        )
+    })
 }
 
 fn gen_invokeblock(
