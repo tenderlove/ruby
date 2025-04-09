@@ -2345,6 +2345,32 @@ vm_method_cfunc_is(const rb_iseq_t *iseq, CALL_DATA cd, VALUE recv, cfunc_type f
     return check_cfunc(vm_cc_cme(cc), func);
 }
 
+static inline bool
+vm_can_allocate_p(const rb_iseq_t *iseq, CALL_DATA cd, VALUE recv)
+{
+    VM_ASSERT(iseq != NULL);
+    const struct rb_callcache *cc = vm_search_method((VALUE)iseq, cd, recv);
+    if (UNLIKELY((ruby_vm_event_flags & ISEQ_TRACE_EVENTS))) {
+        return false;
+    }
+    else {
+        const struct rb_callable_method_entry_struct * cme = vm_cc_cme(cc);
+
+        if (check_cfunc(cme, rb_class_new_instance_pass_kw)) {
+            return true;
+        }
+        else {
+            if (cme->def->type == VM_METHOD_TYPE_ZSUPER && vm_ci_flag(cd->ci) & VM_CALL_FCALL) {
+                cc = vm_search_method_fastpath((VALUE)iseq, cd, RCLASS_SUPER(CLASS_OF(recv)));
+                return check_cfunc(vm_cc_cme(cc), rb_class_new_instance_pass_kw);
+            }
+            else {
+                return false;
+            }
+        }
+    }
+}
+
 #define check_cfunc(me, func) check_cfunc(me, make_cfunc_type(func))
 #define vm_method_cfunc_is(iseq, cd, recv, func) vm_method_cfunc_is(iseq, cd, recv, make_cfunc_type(func))
 
