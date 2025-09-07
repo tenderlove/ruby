@@ -1022,6 +1022,9 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
 
     env_ep = &env_body[local_size - 1 /* specval */];
     env_ep[VM_ENV_DATA_INDEX_ENV] = (VALUE)env;
+#define HAS_TAG(_obj) (VALUE)(((uintptr_t)_obj) & ((uintptr_t)0xFF << 56))
+    RUBY_ASSERT(HAS_TAG(env));
+#undef HAS_TAG
 
     env->iseq = (rb_iseq_t *)(VM_FRAME_RUBYFRAME_P(cfp) ? cfp->iseq : NULL);
     env->ep = env_ep;
@@ -3429,11 +3432,18 @@ rb_execution_context_update(rb_execution_context_t *ec)
                 const VALUE *prev_ep = VM_ENV_PREV_EP(ep);
                 if (VM_ENV_FLAGS(prev_ep, VM_ENV_FLAG_ESCAPED)) {
                     VM_FORCE_WRITE(&prev_ep[VM_ENV_DATA_INDEX_ENV], rb_gc_location(prev_ep[VM_ENV_DATA_INDEX_ENV]));
+#define HAS_TAG(_obj) (VALUE)(((uintptr_t)_obj) & ((uintptr_t)0xFF << 56))
+                    RUBY_ASSERT(HAS_TAG(prev_ep[VM_ENV_DATA_INDEX_ENV]));
+#undef HAS_TAG
                 }
 
                 if (VM_ENV_FLAGS(ep, VM_ENV_FLAG_ESCAPED)) {
                     VM_FORCE_WRITE(&ep[VM_ENV_DATA_INDEX_ENV], rb_gc_location(ep[VM_ENV_DATA_INDEX_ENV]));
                     VM_FORCE_WRITE(&ep[VM_ENV_DATA_INDEX_ME_CREF], rb_gc_location(ep[VM_ENV_DATA_INDEX_ME_CREF]));
+#define HAS_TAG(_obj) (VALUE)(((uintptr_t)_obj) & ((uintptr_t)0xFF << 56))
+                    RUBY_ASSERT(HAS_TAG(ep[VM_ENV_DATA_INDEX_ENV]));
+                    RUBY_ASSERT(HAS_TAG(ep[VM_ENV_DATA_INDEX_ME_CREF]));
+#undef HAS_TAG
                 }
             }
 

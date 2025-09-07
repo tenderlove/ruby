@@ -308,6 +308,10 @@ int ruby_rgengc_debug;
 # define GC_DEBUG_STRESS_TO_CLASS 1
 #endif
 
+#define TAG_WITH_TYPE(_obj, type) (VALUE)(((uintptr_t)_obj) | ((uintptr_t)type << 56))
+#define UNTAG(ptr) (VALUE)((uintptr_t)ptr & ~((uintptr_t)0xFF << 56))
+#define HAS_TAG(_obj) (VALUE)(((uintptr_t)_obj) & ((uintptr_t)0xFF << 56))
+
 typedef enum {
     GPR_FLAG_NONE               = 0x000,
     /* major reason */
@@ -2500,7 +2504,7 @@ rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags
           newobj_slowpath_wb_unprotected(klass, flags, objspace, cache, heap_idx);
     }
 
-    return newobj_fill(obj, v1, v2, v3);
+    return newobj_fill(TAG_WITH_TYPE(obj, 0xFF), v1, v2, v3);
 }
 
 static int
@@ -2544,7 +2548,7 @@ PUREFUNC(static inline bool is_pointer_to_heap(rb_objspace_t *objspace, const vo
 static inline bool
 is_pointer_to_heap(rb_objspace_t *objspace, const void *ptr)
 {
-    register uintptr_t p = (uintptr_t)ptr;
+    register uintptr_t p = (uintptr_t)UNTAG(ptr);
     register struct heap_page *page;
 
     RB_DEBUG_COUNTER_INC(gc_isptr_trial);
@@ -2555,7 +2559,7 @@ is_pointer_to_heap(rb_objspace_t *objspace, const void *ptr)
     if (p % BASE_SLOT_SIZE != 0) return FALSE;
     RB_DEBUG_COUNTER_INC(gc_isptr_align);
 
-    page = heap_page_for_ptr(objspace, (uintptr_t)ptr);
+    page = heap_page_for_ptr(objspace, (uintptr_t)p);
     if (page) {
         RB_DEBUG_COUNTER_INC(gc_isptr_maybe);
         if (heap_page_in_global_empty_pages_pool(objspace, page)) {
@@ -3048,7 +3052,7 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
         uintptr_t p = (uintptr_t)page->start;
         uintptr_t pend = p + page->total_slots * stride;
         for (; p < pend; p += stride) {
-            VALUE vp = (VALUE)p;
+            VALUE vp = TAG_WITH_TYPE(p, 0xFF);
             asan_unpoisoning_object(vp) {
                 if (rb_gc_shutdown_call_finalizer_p(vp)) {
                     rb_gc_obj_free_vm_weak_references(vp);
@@ -4239,7 +4243,16 @@ mark_stack_free_cache(mark_stack_t *stack)
 static void
 push_mark_stack(mark_stack_t *stack, VALUE obj)
 {
+    /*
+    if (!SPECIAL_CONST_P(obj) && !HAS_TAG(obj)) {
+        if (BUILTIN_TYPE(obj) == T_IMEMO && imemo_type(obj) == imemo_env) {
+            fprintf(stderr, "push obj without tag %p %d\n", (void *)obj, imemo_type(obj));
+            rb_bug("argh");
+        }
+    }
+    */
     switch (BUILTIN_TYPE(obj)) {
+      case T_IMEMO:
       case T_OBJECT:
       case T_CLASS:
       case T_MODULE:
@@ -4258,7 +4271,6 @@ push_mark_stack(mark_stack_t *stack, VALUE obj)
       case T_TRUE:
       case T_FALSE:
       case T_SYMBOL:
-      case T_IMEMO:
       case T_ICLASS:
         if (stack->index == stack->limit) {
             push_mark_stack_chunk(stack);
@@ -5942,12 +5954,12 @@ rgengc_rememberset_mark(rb_objspace_t *objspace, rb_heap_t *heap)
 
             bitset = bits[0];
             bitset >>= NUM_IN_PAGE(p);
-            rgengc_rememberset_mark_plane(objspace, p, bitset);
+            rgengc_rememberset_mark_plane(objspace, TAG_WITH_TYPE(p, 0xFF), bitset);
             p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
 
             for (j=1; j < HEAP_PAGE_BITMAP_LIMIT; j++) {
                 bitset = bits[j];
-                rgengc_rememberset_mark_plane(objspace, p, bitset);
+                rgengc_rememberset_mark_plane(objspace, TAG_WITH_TYPE(p, 0xFF), bitset);
                 p += BITS_BITLENGTH * BASE_SLOT_SIZE;
             }
         }

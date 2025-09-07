@@ -1567,7 +1567,10 @@ vm_env_new(VALUE *env_ep, VALUE *env_body, unsigned int env_size, const rb_iseq_
     env->ep = env_ep;
     env->env = env_body;
     env->env_size = env_size;
+#define HAS_TAG(_obj) (VALUE)(((uintptr_t)_obj) & ((uintptr_t)0xFF << 56))
     env_ep[VM_ENV_DATA_INDEX_ENV] = (VALUE)env;
+    RUBY_ASSERT(HAS_TAG(env));
+#undef HAS_TAG
     return env;
 }
 

@@ -397,7 +397,9 @@ rbimpl_rstring_getmem(VALUE str)
         /* Expecting compilers to optimize this on-stack struct away. */
         struct RString retval;
         retval.len = RSTRING_LEN(str);
-        retval.as.heap.ptr = RSTRING(str)->as.embed.ary;
+#define UNTAG(ptr) (VALUE)((uintptr_t)ptr & ~((uintptr_t)0xFF << 56))
+        retval.as.heap.ptr = RSTRING(UNTAG(str))->as.embed.ary;
+#undef UNTAG
         return retval;
     }
 }

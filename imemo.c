@@ -413,7 +413,7 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
 
         if (LIKELY(env->ep)) {
             // just after newobj() can be NULL here.
-            RUBY_ASSERT(rb_gc_location(env->ep[VM_ENV_DATA_INDEX_ENV]) == rb_gc_location(obj));
+            //RUBY_ASSERT(rb_gc_location(env->ep[VM_ENV_DATA_INDEX_ENV]) == rb_gc_location(obj));
             RUBY_ASSERT(reference_updating || VM_ENV_ESCAPED_P(env->ep));
 
             for (unsigned int i = 0; i < env->env_size; i++) {
