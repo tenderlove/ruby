@@ -388,6 +388,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                 }
             }
         }
+
         // Blocks should always end with control flow
         assert!(asm.current_block().insns.last().unwrap().is_terminator());
     }
@@ -1979,6 +1980,7 @@ fn gen_return(asm: &mut Assembler, val: lir::Opnd) {
     // Return from the function
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()
     asm.cret(C_RET_OPND);
+    asm.pad_patch_point();
 }
 
 /// Compile Fixnum + Fixnum
