@@ -696,6 +696,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         &Insn::GuardGreaterEq { left, right, state, .. } => gen_guard_greater_eq(jit, asm, opnd!(left), opnd!(right), &function.frame_state(state)),
         Insn::PatchPoint { invariant, state } => no_output!(gen_patch_point(jit, asm, invariant, &function.frame_state(*state))),
         Insn::CCall { cfunc, recv, args, name, owner: _, return_type: _, elidable: _ } => gen_ccall(asm, *cfunc, *name, opnd!(recv), opnds!(args)),
+        Insn::FfiCall { native_func, args, param_types, ffi_return_type, name, .. } => gen_ffi_call(asm, *native_func, *name, opnds!(args), param_types, *ffi_return_type),
         // Give up CCallWithFrame for 7+ args since asm.ccall() supports at most 6 args (recv + args).
         // There's no test case for this because no core cfuncs have this many parameters. But C extensions could have such methods.
         Insn::CCallWithFrame { cd, state, args, .. } if args.len() + 1 > C_ARG_OPNDS.len() =>
@@ -1100,6 +1101,40 @@ fn gen_ccall(asm: &mut Assembler, cfunc: *const u8, name: ID, recv: Opnd, args: 
     cfunc_args.extend(args);
     asm.count_call_to(&name.contents_lossy());
     asm.ccall(cfunc, cfunc_args)
+}
+
+/// Generate a direct native call via FFI trampoline metadata.
+/// Converts Ruby VALUE args to C types, calls the native function, and converts the return.
+fn gen_ffi_call(asm: &mut Assembler, native_func: *const u8, name: ID, args: Vec<Opnd>, param_types: &[u8], ffi_return_type: u8) -> lir::Opnd {
+    asm_comment!(asm, "FFI direct call to {}", name.contents_lossy());
+
+    // Convert each Ruby arg to the appropriate C type
+    let mut native_args = Vec::with_capacity(args.len());
+    for (i, arg) in args.iter().enumerate() {
+        match param_types.get(i) {
+            Some(&3) => {
+                // Type 3 = string: extract RSTRING_PTR
+                let ptr = get_string_ptr(asm, *arg);
+                native_args.push(ptr);
+            }
+            _ => {
+                native_args.push(*arg);
+            }
+        }
+    }
+
+    // Call the native function directly
+    let result = asm.ccall(native_func, native_args);
+
+    // Convert the return value back to a Ruby VALUE
+    match ffi_return_type {
+        5 => {
+            // size_t -> Fixnum via LONG2FIX: (val << 1) | 1
+            let shifted = asm.lshift(result, Opnd::UImm(1));
+            asm.or(shifted, Opnd::UImm(1))
+        }
+        _ => result,
+    }
 }
 
 // Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().

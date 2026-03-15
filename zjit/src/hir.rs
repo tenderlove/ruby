@@ -943,6 +943,18 @@ pub enum Insn {
     /// `name` and `owner` are for printing purposes only
     CCall { cfunc: *const u8, recv: InsnId, args: Vec<InsnId>, name: ID, owner: VALUE, return_type: Type, elidable: bool },
 
+    /// Call a native function discovered via FFI trampoline metadata.
+    /// Codegen converts Ruby VALUE args to C types based on param_types,
+    /// calls the native function directly, and converts the return value.
+    FfiCall {
+        native_func: *const u8,
+        recv: InsnId,
+        args: Vec<InsnId>,
+        param_types: Vec<u8>,
+        ffi_return_type: u8,
+        name: ID,
+    },
+
     /// Call a C function that pushes a frame
     CCallWithFrame {
         cd: *const rb_call_data, // cd for falling back to Send
@@ -1358,6 +1370,10 @@ macro_rules! for_each_operand_impl {
                 $visit_one!(recv);
                 $visit_many!(args);
             }
+            Insn::FfiCall { recv, args, .. } => {
+                $visit_one!(recv);
+                $visit_many!(args);
+            }
             Insn::GetIvar { self_val, state, .. }
             | Insn::DefinedIvar { self_val, state, .. } => {
                 $visit_one!(self_val);
@@ -1596,6 +1612,7 @@ impl Insn {
                     effects::Any
                 }
             },
+            Insn::FfiCall { .. } => effects::Any,
             Insn::CCallVariadic { .. } => effects::Any,
             Insn::Send { .. } => effects::Any,
             Insn::SendForward { .. } => effects::Any,
@@ -2046,6 +2063,13 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
             Insn::CCall { cfunc, recv, args, name, owner, return_type: _, elidable: _ } => {
                 let display_name = if *owner == Qnil { name.contents_lossy().to_string() } else { qualified_method_name(*owner, *name) };
                 write!(f, "CCall {recv}, :{}@{:p}", display_name, self.ptr_map.map_ptr(cfunc))?;
+                for arg in args {
+                    write!(f, ", {arg}")?;
+                }
+                Ok(())
+            },
+            Insn::FfiCall { native_func, recv, args, name, .. } => {
+                write!(f, "FfiCall {recv}, :{}@{:p}", name.contents_lossy(), self.ptr_map.map_ptr(native_func))?;
                 for arg in args {
                     write!(f, ", {arg}")?;
                 }
@@ -2566,6 +2590,62 @@ fn iseq_get_return_value(iseq: IseqPtr, captured_opnd: Option<InsnId>, ci_flags:
     }
 }
 
+/// FFI trampoline metadata extracted from a naked function's inline data.
+struct FfiTrampoline {
+    param_types: Vec<u8>,
+    ffi_return_type: u8,
+    native_name: String,
+    native_func: *const u8,
+}
+
+/// Check if a cfunc pointer points to a naked trampoline with embedded FFI metadata.
+/// Returns `Some(FfiTrampoline)` if the magic bytes "FFI0" are found at offset 4.
+#[cfg(target_arch = "aarch64")]
+unsafe fn check_ffi_trampoline(cfunc_ptr: *const u8) -> Option<FfiTrampoline> {
+    unsafe extern "C" {
+        fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+    }
+
+    // RTLD_DEFAULT on macOS
+    const RTLD_DEFAULT: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
+
+    // Check magic at offset 4
+    let magic_ptr = unsafe { cfunc_ptr.add(4) as *const u32 };
+    if unsafe { magic_ptr.read_unaligned() } != 0x46464930 {
+        return None;
+    }
+
+    // Read param_count at offset 8
+    let param_count = unsafe { *cfunc_ptr.add(8) } as usize;
+
+    // Read param_types at offsets 9..9+param_count
+    let mut param_types = Vec::with_capacity(param_count);
+    for i in 0..param_count {
+        param_types.push(unsafe { *cfunc_ptr.add(9 + i) });
+    }
+
+    // Read return_type at offset 9+param_count
+    let ffi_return_type = unsafe { *cfunc_ptr.add(9 + param_count) };
+
+    // Read null-terminated function name at offset 10+param_count
+    let name_ptr = unsafe { cfunc_ptr.add(10 + param_count) as *const std::ffi::c_char };
+    let native_name = unsafe { std::ffi::CStr::from_ptr(name_ptr) }.to_string_lossy().into_owned();
+
+    // Resolve the native function via dlsym
+    let c_name = std::ffi::CString::new(native_name.as_str()).ok()?;
+    let func_ptr = unsafe { dlsym(RTLD_DEFAULT, c_name.as_ptr()) };
+    if func_ptr.is_null() {
+        return None;
+    }
+
+    Some(FfiTrampoline {
+        param_types,
+        ffi_return_type,
+        native_name,
+        native_func: func_ptr as *const u8,
+    })
+}
+
 impl Function {
     fn new(iseq: *const rb_iseq_t) -> Function {
         Function {
@@ -2929,6 +3009,7 @@ impl Function {
                 elidable,
                 block,
             },
+            &FfiCall { native_func, recv, ref args, ref param_types, ffi_return_type, name } => FfiCall { native_func, recv: find!(recv), args: find_vec!(args), param_types: param_types.clone(), ffi_return_type, name },
             &CCallVariadic { cfunc, recv, ref args, cme, name, state, return_type, elidable, block } => CCallVariadic {
                 cfunc, recv: find!(recv), args: find_vec!(args), cme, name, state, return_type, elidable, block
             },
@@ -3073,6 +3154,12 @@ impl Function {
             Insn::ObjectAllocClass { class, .. } => Type::from_class(*class),
             &Insn::CCallWithFrame { return_type, .. } => return_type,
             Insn::CCall { return_type, .. } => *return_type,
+            Insn::FfiCall { ffi_return_type, .. } => {
+                match ffi_return_type {
+                    5 => types::Fixnum, // size_t
+                    _ => types::BasicObject,
+                }
+            },
             &Insn::CCallVariadic { return_type, .. } => return_type,
             Insn::CheckMatch { .. } => types::BasicObject,
             Insn::GuardType { val, guard_type, .. } => self.type_of(*val).intersection(*guard_type),
@@ -4193,6 +4280,36 @@ impl Function {
                             let cfunc_argc = unsafe { get_mct_argc(cfunc) };
                             let cfunc_ptr = unsafe { get_mct_func(cfunc) }.cast();
 
+                            // Check for FFI trampoline metadata embedded in the cfunc
+                            #[cfg(target_arch = "aarch64")]
+                            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) } {
+                                emit_super_call_guards(self, block, super_cme, current_cme, mid, state);
+
+                                // Guard arg types based on FFI metadata
+                                let mut guarded_args = Vec::with_capacity(args.len());
+                                for (i, &arg) in args.iter().enumerate() {
+                                    let guarded = match ffi_meta.param_types.get(i) {
+                                        Some(&3) => { // string
+                                            self.push_insn(block, Insn::GuardType { val: arg, guard_type: types::StringExact, state })
+                                        }
+                                        _ => arg,
+                                    };
+                                    guarded_args.push(guarded);
+                                }
+
+                                let name = rust_str_to_id(&qualified_method_name(unsafe { (*super_cme).owner }, unsafe { (*super_cme).called_id }));
+                                let ffi_call = self.push_insn(block, Insn::FfiCall {
+                                    native_func: ffi_meta.native_func,
+                                    recv,
+                                    args: guarded_args,
+                                    param_types: ffi_meta.param_types,
+                                    ffi_return_type: ffi_meta.ffi_return_type,
+                                    name,
+                                });
+                                self.make_equal_to(insn_id, ffi_call);
+                                continue;
+                            }
+
                             let props = ZJITState::get_method_annotations().get_cfunc_properties(super_cme);
                             if props.is_none() && get_option!(stats) {
                                 self.count_not_annotated_cfunc(block, super_cme);
@@ -4790,6 +4907,47 @@ impl Function {
             let cfunc_argc = unsafe { get_mct_argc(cfunc) };
             let cfunc_ptr = unsafe { get_mct_func(cfunc) }.cast();
 
+            // Check for FFI trampoline metadata embedded in the cfunc
+            #[cfg(target_arch = "aarch64")]
+            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) } {
+                // Check singleton class assumption first
+                if !fun.assume_no_singleton_classes(block, recv_class, state) {
+                    fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
+                    return Err(());
+                }
+
+                fun.gen_patch_points_for_optimized_ccall(block, recv_class, method_id, cme, state);
+
+                if let Some(profiled_type) = profiled_type {
+                    recv = fun.push_insn(block, Insn::GuardType { val: recv, guard_type: Type::from_profiled_type(profiled_type), state });
+                    fun.insn_types[recv.0] = fun.infer_type(recv);
+                }
+
+                // Guard arg types based on FFI metadata
+                let mut guarded_args = Vec::with_capacity(args.len());
+                for (i, &arg) in args.iter().enumerate() {
+                    let guarded = match ffi_meta.param_types.get(i) {
+                        Some(&3) => { // string
+                            fun.push_insn(block, Insn::GuardType { val: arg, guard_type: types::StringExact, state })
+                        }
+                        _ => arg,
+                    };
+                    guarded_args.push(guarded);
+                }
+
+                let name = rust_str_to_id(&qualified_method_name(unsafe { (*cme).owner }, unsafe { (*cme).called_id }));
+                let ffi_call = fun.push_insn(block, Insn::FfiCall {
+                    native_func: ffi_meta.native_func,
+                    recv,
+                    args: guarded_args,
+                    param_types: ffi_meta.param_types,
+                    ffi_return_type: ffi_meta.ffi_return_type,
+                    name,
+                });
+                fun.make_equal_to(send_insn_id, ffi_call);
+                return Ok(());
+            }
+
             match cfunc_argc {
                 0.. => {
                     // (self, arg0, arg1, ..., argc) form
@@ -4937,6 +5095,49 @@ impl Function {
             // Find the `argc` (arity) of the C method, which describes the parameters it expects
             let cfunc = unsafe { get_cme_def_body_cfunc(cme) };
             let cfunc_argc = unsafe { get_mct_argc(cfunc) };
+            let cfunc_ptr: *const u8 = unsafe { get_mct_func(cfunc) }.cast();
+
+            // Check for FFI trampoline metadata embedded in the cfunc
+            #[cfg(target_arch = "aarch64")]
+            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) } {
+                // Check singleton class assumption first
+                if !fun.assume_no_singleton_classes(block, recv_class, state) {
+                    fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
+                    return Err(());
+                }
+
+                fun.gen_patch_points_for_optimized_ccall(block, recv_class, method_id, cme, state);
+
+                if let Some(profiled_type) = profiled_type {
+                    recv = fun.push_insn(block, Insn::GuardType { val: recv, guard_type: Type::from_profiled_type(profiled_type), state });
+                    fun.insn_types[recv.0] = fun.infer_type(recv);
+                }
+
+                // Guard arg types based on FFI metadata
+                let mut guarded_args = Vec::with_capacity(args.len());
+                for (i, &arg) in args.iter().enumerate() {
+                    let guarded = match ffi_meta.param_types.get(i) {
+                        Some(&3) => { // string
+                            fun.push_insn(block, Insn::GuardType { val: arg, guard_type: types::StringExact, state })
+                        }
+                        _ => arg,
+                    };
+                    guarded_args.push(guarded);
+                }
+
+                let name = rust_str_to_id(&qualified_method_name(unsafe { (*cme).owner }, unsafe { (*cme).called_id }));
+                let ffi_call = fun.push_insn(block, Insn::FfiCall {
+                    native_func: ffi_meta.native_func,
+                    recv,
+                    args: guarded_args,
+                    param_types: ffi_meta.param_types,
+                    ffi_return_type: ffi_meta.ffi_return_type,
+                    name,
+                });
+                fun.make_equal_to(send_insn_id, ffi_call);
+                return Ok(());
+            }
+
             match cfunc_argc {
                 0.. => {
                     // (self, arg0, arg1, ..., argc) form
@@ -6194,6 +6395,7 @@ impl Function {
             | Insn::DupArrayInclude { target: val, .. }
             | Insn::GetIvar { self_val: val, .. }
             | Insn::CCall { recv: val, .. }
+            | Insn::FfiCall { recv: val, .. }
             | Insn::FixnumBitCheck { val, .. } // TODO (https://github.com/Shopify/ruby/issues/859) this should check Fixnum, but then test_checkkeyword_tests_fixnum_bit fails
             | Insn::DefinedIvar { self_val: val, .. } => {
                 self.assert_subtype(insn_id, val, types::BasicObject)
