@@ -181,12 +181,7 @@ impl Assembler {
             // being used. It is okay not to use their output here.
             #[allow(unused_must_use)]
             match &mut insn {
-                Insn::Add { left, right, out } |
-                Insn::Sub { left, right, out } |
-                Insn::Mul { left, right, out } |
-                Insn::And { left, right, out } |
-                Insn::Or { left, right, out } |
-                Insn::Xor { left, right, out } => {
+                Insn::Mul { left, right, out } => {
                     match (*left, *right) {
                         (Opnd::Mem(_), Opnd::Mem(_)) => {
                             *left = asm.load(*left);
@@ -215,6 +210,13 @@ impl Assembler {
                         }
                         _ => {}
                     }
+                    asm.push_insn(insn);
+                },
+                Insn::Add { .. } |
+                Insn::Sub { .. } |
+                Insn::And { .. } |
+                Insn::Or { .. } |
+                Insn::Xor { .. } => {
                     asm.push_insn(insn);
                 },
                 Insn::Cmp { left, right } => {
@@ -468,14 +470,21 @@ impl Assembler {
                 Insn::Or  { left, right, out } |
                 Insn::Xor { left, right, out } => {
                     *left = split_stack_membase(asm, *left, SCRATCH0_OPND, &stack_state);
-                    *left = split_if_both_memory(asm, *left, *right, SCRATCH0_OPND);
                     *right = split_stack_membase(asm, *right, SCRATCH1_OPND, &stack_state);
                     *right = split_64bit_immediate(asm, *right, SCRATCH1_OPND);
                     *out = split_stack_membase(asm, *out, SCRATCH1_OPND, &stack_state);
 
-                    let (out, left) = (*out, *left);
+                    let (out_val, left_val) = (*out, *left);
+                    // If out and right alias, mov out, left would clobber right
+                    // before the operation. Save right to scratch first.
+                    if out_val == *right && out_val != left_val {
+                        asm.load_into(SCRATCH1_OPND, *right);
+                        *right = SCRATCH1_OPND;
+                    }
+                    asm_mov(asm, out_val, left_val, SCRATCH0_OPND);
+                    *right = split_if_both_memory(asm, *right, out_val, SCRATCH1_OPND);
+                    *left = out_val;
                     asm.push_insn(insn);
-                    asm_mov(asm, out, left, SCRATCH0_OPND);
                 }
                 Insn::Mul { left, right, out } => {
                     *left = split_stack_membase(asm, *left, SCRATCH0_OPND, &stack_state);
@@ -566,6 +575,8 @@ impl Assembler {
                 }
                 Insn::Load { out, opnd } |
                 Insn::LoadInto { dest: out, opnd } => {
+                    // Skip self-loads (e.g., Load { opnd: Reg(rbx), out: Reg(rbx) })
+                    if *out == *opnd { continue; }
                     *opnd = split_stack_membase(asm, *opnd, SCRATCH0_OPND, &stack_state);
                     // Split stack membase on out before checking for memory write
                     *out = split_stack_membase(asm, *out, SCRATCH1_OPND, &stack_state);
