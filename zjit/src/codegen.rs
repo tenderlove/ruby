@@ -388,6 +388,10 @@ fn gen_iseq_body(cb: &mut CodeBlock, iseq: IseqPtr, mut version: IseqVersionRef,
     // Record end of code region for serialization
     unsafe { version.as_mut() }.end_ptr = Some(cb.get_write_ptr());
 
+    // Dump compiled code for debugging comparison
+    {
+    }
+
     // Prepare for GC
     unsafe { version.as_mut() }.outgoing.extend(iseq_calls);
     append_gc_offsets(iseq, version, &gc_offsets);
@@ -2806,23 +2810,23 @@ fn gen_guard_no_bits_set(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd
     val
 }
 
-/// Generate code that records unoptimized C functions if --zjit-stats is enabled
+/// Generate code that records unoptimized C functions if --zjit-stats is enabled.
+/// Dynamic counter pointers (per-method stats) can't be serialized, so they're not tagged.
 fn gen_incr_counter_ptr(asm: &mut Assembler, counter_ptr: *mut u64) {
     if get_option!(stats) {
-        // Tag counter pointer for relocation. Use the pointer value as the ID
-        // since dynamic counters (per-method stats) don't have a Counter enum variant.
-        asm.tag_ptr_reloc(counter_ptr as *const u8, crate::reloc::RelocKind::Counter {
-            counter_id: counter_ptr as u32,
-        });
         asm.incr_counter(Opnd::const_ptr(counter_ptr as *const u8), Opnd::UImm(1));
     }
 }
 
-/// Generate code that increments a counter if --zjit-stats
+/// Generate code that increments a named counter if --zjit-stats.
+/// Named counters are tagged with their enum discriminant for serialization.
 fn gen_incr_counter(asm: &mut Assembler, counter: Counter) {
     if get_option!(stats) {
         let ptr = counter_ptr(counter);
-        gen_incr_counter_ptr(asm, ptr);
+        asm.tag_ptr_reloc(ptr as *const u8, crate::reloc::RelocKind::Counter {
+            counter_id: counter as u32,
+        });
+        asm.incr_counter(Opnd::const_ptr(ptr as *const u8), Opnd::UImm(1));
     }
 }
 

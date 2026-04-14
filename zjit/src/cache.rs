@@ -54,6 +54,11 @@ pub extern "C" fn rb_zjit_dump_cache(_ec: EcPtr, _self: VALUE) -> VALUE {
         return Qnil;
     };
 
+    // Don't overwrite an existing cache file
+    if cache_path.exists() {
+        return Qnil;
+    }
+
     if let Err(e) = dump_cache(cache_path) {
         eprintln!("ZJIT: Failed to dump cache to {}: {e}", cache_path.display());
     }
@@ -507,7 +512,7 @@ pub fn try_install_cached_code(iseq: IseqPtr, cache: &CacheIndex) -> Option<*con
     let self_label_val = unsafe { rb_iseq_label(iseq) };
     let self_path = ruby_str_to_rust_string(self_path_val);
     let self_label = ruby_str_to_rust_string(self_label_val);
-    for cs in &entry.call_sites {
+    for cs in &[] as &[CachedCallSite] { // temporarily disabled — bl is PC-relative and targets within the blob
         let callee_entry_ptr = if cs.callee_path == self_path && cs.callee_label == self_label  {
             // Self-recursive call — use our own entry points
             let idx = cs.jit_entry_idx as usize;
@@ -560,6 +565,11 @@ fn resolve_reloc(iseq: IseqPtr, iseq_body: *const u8, kind: &RelocKind) -> Optio
             let pc = unsafe { iseq_body.add(*pc_offset as usize) } as *const VALUE;
             let jit_frame = crate::payload::JITFrame::new_iseq(pc, iseq, *materialize_block_code);
             Some(jit_frame as u64)
+        }
+        RelocKind::Counter { .. } => {
+            // Counter relocs can't be resolved across processes.
+            // Code compiled with --zjit-stats can't be loaded from cache.
+            None
         }
         RelocKind::Class { name } => {
             // Skip anonymous classes
