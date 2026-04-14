@@ -13,7 +13,7 @@ use crate::invariants::{
     track_single_ractor_assumption, track_stable_constant_names_assumption, track_no_singleton_class_assumption,
     track_root_box_assumption
 };
-use crate::gc::append_gc_offsets;
+use crate::gc::{append_gc_offsets, append_reloc_entries};
 use crate::payload::{IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
 use crate::state::ZJITState;
 use crate::stats::{CompileError, exit_counter_for_compile_error, exit_counter_for_unhandled_hir_insn, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_without_block_fallback_counter_for_method_type, send_without_block_fallback_counter_for_optimized_method_type};
@@ -25,6 +25,21 @@ use crate::hir::{BlockHandler, Const, FrameState, Function, Insn, InsnId, Recomp
 use crate::hir_type::{types, Type};
 use crate::options::{get_option, PerfMap};
 use crate::cast::IntoUsize;
+
+/// Tag an ISEQ body pointer (cd, ic, pc, etc.) for relocation.
+/// Computes the byte offset from the ISEQ's encoded body start.
+fn tag_iseq_body_ptr(asm: &mut Assembler, iseq: IseqPtr, ptr: *const u8) {
+    let body_start = unsafe { get_iseq_body_iseq_encoded(iseq) } as *const u8;
+    let byte_offset = unsafe { ptr.offset_from(body_start) };
+    if byte_offset < 0 {
+        // Pointer is not within the ISEQ body — skip tagging for now.
+        // This can happen for IC/cd pointers in test environments.
+        return;
+    }
+    asm.tag_ptr_reloc(ptr, crate::reloc::RelocKind::IseqBodyOffset {
+        byte_offset: byte_offset as u32,
+    });
+}
 
 /// Default maximum number of compiled versions per ISEQ.
 const DEFAULT_MAX_VERSIONS: usize = 2;
@@ -169,6 +184,7 @@ pub extern "C" fn rb_zjit_iseq_gen_entry_point(iseq: IseqPtr, ec: EcPtr, jit_exc
     // with_vm_lock() does nothing if the program doesn't use Ractors.
     with_vm_lock(src_loc!(), || {
         let cb = ZJITState::get_code_block();
+        debug!("Compiling: {}", iseq_get_location(iseq, 0));
         let mut code_ptr = with_time_stat(compile_time_ns, || gen_iseq_entry_point(cb, iseq, jit_exception));
 
         if let Err(err) = &code_ptr {
@@ -291,7 +307,7 @@ pub fn gen_entry_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError>
     asm.frame_teardown(lir::JIT_PRESERVED_REGS);
     asm.cret(out);
 
-    let (code_ptr, gc_offsets) = asm.compile(cb)?;
+    let (code_ptr, gc_offsets, _reloc_entries) = asm.compile(cb)?;
     assert!(gc_offsets.is_empty());
     if get_option!(perf).is_some() {
         let start_ptr = code_ptr.raw_addr(cb);
@@ -353,9 +369,9 @@ fn gen_iseq_body(cb: &mut CodeBlock, iseq: IseqPtr, mut version: IseqVersionRef,
     };
 
     // Compile the High-level IR
-    let (iseq_code_ptrs, gc_offsets, iseq_calls) =
+    let (iseq_code_ptrs, gc_offsets, reloc_entries, iseq_calls) =
         trace_compile_phase("codegen", || {
-            let (iseq_code_ptrs, gc_offsets, iseq_calls) =
+            let (iseq_code_ptrs, gc_offsets, reloc_entries, iseq_calls) =
                 crate::stats::with_time_stat(Counter::compile_lir_time_ns, || gen_function(cb, iseq, version, function))?;
 
             // Stub callee ISEQs for JIT-to-JIT calls
@@ -366,21 +382,72 @@ fn gen_iseq_body(cb: &mut CodeBlock, iseq: IseqPtr, mut version: IseqVersionRef,
                 Ok::<(), CompileError>(())
             })?;
 
-            Ok((iseq_code_ptrs, gc_offsets, iseq_calls))
+            Ok((iseq_code_ptrs, gc_offsets, reloc_entries, iseq_calls))
         })?;
+
+    // Record end of code region for serialization
+    unsafe { version.as_mut() }.end_ptr = Some(cb.get_write_ptr());
 
     // Prepare for GC
     unsafe { version.as_mut() }.outgoing.extend(iseq_calls);
     append_gc_offsets(iseq, version, &gc_offsets);
+    append_reloc_entries(version, reloc_entries);
     Ok(iseq_code_ptrs)
 }
 
 /// Compile a function
-fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, function: &Function) -> Result<(IseqCodePtrs, Vec<CodePtr>, Vec<IseqCallRef>), CompileError> {
+fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, function: &Function) -> Result<(IseqCodePtrs, Vec<CodePtr>, Vec<crate::reloc::RelocEntry>, Vec<IseqCallRef>), CompileError> {
     let (mut jit, asm) = trace_compile_phase("codegen", || {
         let num_spilled_params = max_num_params(function).saturating_sub(ALLOC_REGS.len());
         let mut jit = JITState::new(iseq, version, function.num_insns(), function.num_blocks());
         let mut asm = Assembler::new_with_stack_slots(num_spilled_params);
+
+        // Tag the self ISEQ VALUE for relocation. This covers all side exits that
+        // write the ISEQ to cfp->iseq, as well as explicit SelfIseq uses in codegen.
+        let iseq_val: VALUE = iseq.into();
+        asm.tag_value_reloc(iseq_val, crate::reloc::RelocKind::SelfIseq);
+
+        // Pre-tag all PC values from FrameStates as ISEQ body offsets for relocation.
+        // This ensures side exit PCs get the ldr_literal encoding so they're patchable.
+        {
+            let body_start = unsafe { get_iseq_body_iseq_encoded(iseq) } as *const u8;
+            let iseq_size = unsafe { get_iseq_encoded_size(iseq) } as usize;
+            let body_end = unsafe { body_start.add(iseq_size * SIZEOF_VALUE) };
+            let mut tagged_pcs = std::collections::HashSet::new();
+            for &block_id in function.rpo().iter() {
+                let block = function.block(block_id);
+                for &insn_id in block.insns() {
+                    if let Insn::Snapshot { state } = function.find(insn_id) {
+                        let pc_ptr = state.pc as *const u8;
+                        if !pc_ptr.is_null() && pc_ptr >= body_start && pc_ptr < body_end && tagged_pcs.insert(pc_ptr as usize) {
+                            let byte_offset = unsafe { pc_ptr.offset_from(body_start) };
+                            asm.tag_ptr_reloc(pc_ptr, crate::reloc::RelocKind::IseqBodyOffset {
+                                byte_offset: byte_offset as u32,
+                            });
+                        }
+                    }
+                }
+            }
+            // Also tag next_pc values (used by gen_save_pc_for_gc / JITFrame)
+            for &block_id in function.rpo().iter() {
+                let block = function.block(block_id);
+                for &insn_id in block.insns() {
+                    if let Insn::Snapshot { state } = function.find(insn_id) {
+                        let pc_ptr = state.pc as *const u8;
+                        if !pc_ptr.is_null() && pc_ptr >= body_start && pc_ptr < body_end {
+                            let opcode: usize = state.get_opcode().try_into().unwrap();
+                            let next_pc = unsafe { state.pc.offset(insn_len(opcode) as isize) } as *const u8;
+                            if next_pc >= body_start && next_pc < body_end && tagged_pcs.insert(next_pc as usize) {
+                                let byte_offset = unsafe { next_pc.offset_from(body_start) };
+                                asm.tag_ptr_reloc(next_pc, crate::reloc::RelocKind::IseqBodyOffset {
+                                    byte_offset: byte_offset as u32,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Mapping from HIR block IDs to LIR block IDs.
         // This is is a one-to-one mapping from HIR to LIR blocks used for finding
@@ -560,7 +627,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
 
     // Generate code if everything can be compiled
     let result = asm.compile(cb);
-    if let Ok((start_ptr, _)) = result {
+    if let Ok((start_ptr, _, _)) = result {
         if get_option!(perf) == Some(PerfMap::ISEQ) {
             let start_usize = start_ptr.raw_addr(cb);
             let end_usize = cb.get_write_ptr().raw_addr(cb);
@@ -573,14 +640,14 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
             ZJITState::log_compile(iseq_name);
         }
     }
-    result.map(|(start_ptr, gc_offsets)| {
+    result.map(|(start_ptr, gc_offsets, reloc_entries)| {
         // Make sure jit_entry_ptrs can be used as a parallel vector to jit_entry_insns()
         jit.jit_entries.sort_by_key(|jit_entry| jit_entry.borrow().jit_entry_idx);
 
         let jit_entry_ptrs = jit.jit_entries.iter().map(|jit_entry|
             jit_entry.borrow().start_addr.get().expect("start_addr should have been set by pos_marker in gen_entry_point")
         ).collect();
-        (IseqCodePtrs { start_ptr, jit_entry_ptrs }, gc_offsets, jit.iseq_calls)
+        (IseqCodePtrs { start_ptr, jit_entry_ptrs }, gc_offsets, reloc_entries, jit.iseq_calls)
     })
 }
 
@@ -819,6 +886,7 @@ fn gen_objtostring(jit: &mut JITState, asm: &mut Assembler, val: Opnd, cd: *cons
     gen_prepare_non_leaf_call(jit, asm, state);
     // TODO: Specialize for immediate types
     // Call rb_vm_objtostring(cfp, recv, cd)
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
     let ret = asm_ccall!(asm, rb_vm_objtostring, CFP, val, Opnd::const_ptr(cd));
 
     // TODO: Call `to_s` on the receiver if rb_vm_objtostring returns Qundef
@@ -953,6 +1021,7 @@ fn gen_get_constant_path(jit: &JITState, asm: &mut Assembler, ic: *const iseq_in
     // Anything could be called on const_missing
     gen_prepare_non_leaf_call(jit, asm, state);
 
+    tag_iseq_body_ptr(asm, jit.iseq, ic as *const u8);
     asm_ccall!(asm, rb_vm_opt_getconstant_path, EC, CFP, Opnd::const_ptr(ic))
 }
 
@@ -1014,6 +1083,16 @@ pub fn split_patch_point(asm: &mut Assembler, target: &Target, invariant: Invari
     // Remember the current address as a patch point
     asm.pos_marker(move |code_ptr, cb| {
         let side_exit_ptr = cb.resolve_label(exit_label);
+
+        // Record the invariant dependency for serialization
+        let mut version_mut = version;
+        unsafe { version_mut.as_mut() }.invariant_deps.push(crate::reloc::InvariantDep {
+            invariant,
+            patch_point_offset: code_ptr,
+            side_exit_offset: side_exit_ptr,
+        });
+
+        // Register with the Invariants struct for runtime invalidation
         match invariant {
             Invariant::BOPRedefined { klass, bop } => {
                 track_bop_assumption(klass, bop, code_ptr, side_exit_ptr, version);
@@ -1028,6 +1107,8 @@ pub fn split_patch_point(asm: &mut Assembler, target: &Target, invariant: Invari
                 track_no_trace_point_assumption(code_ptr, side_exit_ptr, version);
             }
             Invariant::NoEPEscape(iseq) => {
+                debug_assert_eq!(iseq, unsafe { version.as_ref() }.iseq,
+                    "NoEPEscape invariant should always reference the self ISEQ");
                 track_no_ep_escape_assumption(iseq, code_ptr, side_exit_ptr, version);
             }
             Invariant::SingleRactorMode => {
@@ -1209,7 +1290,10 @@ fn gen_getivar(jit: &mut JITState, asm: &mut Assembler, recv: Opnd, id: ID, ic: 
     if ic.is_null() {
         asm_ccall!(asm, rb_ivar_get, recv, id.0.into())
     } else {
-        let iseq = Opnd::Value(jit.iseq.into());
+        let iseq_val: VALUE = jit.iseq.into();
+        asm.tag_value_reloc(iseq_val, crate::reloc::RelocKind::SelfIseq);
+        let iseq = Opnd::Value(iseq_val);
+        tag_iseq_body_ptr(asm, jit.iseq, ic as *const u8);
         asm_ccall!(asm, rb_vm_getinstancevariable, iseq, recv, id.0.into(), Opnd::const_ptr(ic))
     }
 }
@@ -1221,19 +1305,28 @@ fn gen_setivar(jit: &mut JITState, asm: &mut Assembler, recv: Opnd, id: ID, ic: 
     if ic.is_null() {
         asm_ccall!(asm, rb_ivar_set, recv, id.0.into(), val);
     } else {
-        let iseq = Opnd::Value(jit.iseq.into());
+        let iseq_val: VALUE = jit.iseq.into();
+        asm.tag_value_reloc(iseq_val, crate::reloc::RelocKind::SelfIseq);
+        let iseq = Opnd::Value(iseq_val);
+        tag_iseq_body_ptr(asm, jit.iseq, ic as *const u8);
         asm_ccall!(asm, rb_vm_setinstancevariable, iseq, recv, id.0.into(), val, Opnd::const_ptr(ic));
     }
 }
 
 fn gen_getclassvar(jit: &mut JITState, asm: &mut Assembler, id: ID, ic: *const iseq_inline_cvar_cache_entry, state: &FrameState) -> Opnd {
     gen_prepare_non_leaf_call(jit, asm, state);
-    asm_ccall!(asm, rb_vm_getclassvariable, VALUE::from(jit.iseq).into(), CFP, id.0.into(), Opnd::const_ptr(ic))
+    let iseq_val = VALUE::from(jit.iseq);
+    asm.tag_value_reloc(iseq_val, crate::reloc::RelocKind::SelfIseq);
+    tag_iseq_body_ptr(asm, jit.iseq, ic as *const u8);
+    asm_ccall!(asm, rb_vm_getclassvariable, iseq_val.into(), CFP, id.0.into(), Opnd::const_ptr(ic))
 }
 
 fn gen_setclassvar(jit: &mut JITState, asm: &mut Assembler, id: ID, val: Opnd, ic: *const iseq_inline_cvar_cache_entry, state: &FrameState) {
     gen_prepare_non_leaf_call(jit, asm, state);
-    asm_ccall!(asm, rb_vm_setclassvariable, VALUE::from(jit.iseq).into(), CFP, id.0.into(), val, Opnd::const_ptr(ic));
+    let iseq_val = VALUE::from(jit.iseq);
+    asm.tag_value_reloc(iseq_val, crate::reloc::RelocKind::SelfIseq);
+    tag_iseq_body_ptr(asm, jit.iseq, ic as *const u8);
+    asm_ccall!(asm, rb_vm_setclassvariable, iseq_val.into(), CFP, id.0.into(), val, Opnd::const_ptr(ic));
 }
 
 /// Look up global variables
@@ -1512,6 +1605,7 @@ fn gen_send(
     unsafe extern "C" {
         fn rb_vm_send(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
     asm_ccall!(
         asm,
         rb_vm_send,
@@ -1536,6 +1630,7 @@ fn gen_send_forward(
     unsafe extern "C" {
         fn rb_vm_sendforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
     asm_ccall!(
         asm,
         rb_vm_sendforward,
@@ -1558,6 +1653,7 @@ fn gen_send_without_block(
     unsafe extern "C" {
         fn rb_vm_opt_send_without_block(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
     }
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
     asm_ccall!(
         asm,
         rb_vm_opt_send_without_block,
@@ -1731,6 +1827,7 @@ fn gen_invokeblock(
     unsafe extern "C" {
         fn rb_vm_invokeblock(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
     }
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
     asm_ccall!(
         asm,
         rb_vm_invokeblock,
@@ -1819,6 +1916,7 @@ fn gen_invokesuper(
     unsafe extern "C" {
         fn rb_vm_invokesuper(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
     asm_ccall!(
         asm,
         rb_vm_invokesuper,
@@ -1842,6 +1940,7 @@ fn gen_invokesuperforward(
     unsafe extern "C" {
         fn rb_vm_invokesuperforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
     asm_ccall!(
         asm,
         rb_vm_invokesuperforward,
@@ -2404,7 +2503,11 @@ fn gen_is_method_cfunc(jit: &JITState, asm: &mut Assembler, val: lir::Opnd, cd: 
     unsafe extern "C" {
         fn rb_vm_method_cfunc_is(iseq: IseqPtr, cd: *const rb_call_data, recv: VALUE, cfunc: *const u8) -> VALUE;
     }
-    asm_ccall!(asm, rb_vm_method_cfunc_is, VALUE::from(jit.iseq).into(), Opnd::const_ptr(cd), val, Opnd::const_ptr(cfunc))
+    let iseq_val = VALUE::from(jit.iseq);
+    asm.tag_value_reloc(iseq_val, crate::reloc::RelocKind::SelfIseq);
+    tag_iseq_body_ptr(asm, jit.iseq, cd as *const u8);
+    // TODO: cfunc pointer needs relocation too — requires name lookup from HIR
+    asm_ccall!(asm, rb_vm_method_cfunc_is, iseq_val.into(), Opnd::const_ptr(cd), val, Opnd::const_ptr(cfunc))
 }
 
 fn gen_is_bit_equal(asm: &mut Assembler, left: lir::Opnd, right: lir::Opnd) -> lir::Opnd {
@@ -2500,6 +2603,8 @@ fn gen_has_type(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, ty: Typ
 
         // Heap object → check klass field
         let klass = asm.load(Opnd::mem(64, val, RUBY_OFFSET_RBASIC_KLASS));
+        let class_name: &'static str = Box::leak(get_class_name(expected_class).into_boxed_str());
+        asm.tag_value_reloc(expected_class, crate::reloc::RelocKind::Class { name: class_name });
         asm.cmp(klass, Opnd::Value(expected_class));
         let result = asm.csel_e(Opnd::UImm(1), Opnd::Imm(0));
         asm.jmp(result_edge(result));
@@ -2565,6 +2670,8 @@ fn gen_guard_type(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, guard
         // Load the class from the object's klass field
         let klass = asm.load(Opnd::mem(64, val, RUBY_OFFSET_RBASIC_KLASS));
 
+        let class_name: &'static str = Box::leak(get_class_name(expected_class).into_boxed_str());
+        asm.tag_value_reloc(expected_class, crate::reloc::RelocKind::Class { name: class_name });
         asm.cmp(klass, Opnd::Value(expected_class));
         asm.jne(jit, side_exit);
     } else if guard_type.is_subtype(types::TypedTData) {
@@ -2660,7 +2767,10 @@ fn gen_guard_bit_equals(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd,
         gen_incr_counter(asm, Counter::guard_shape_count);
     }
     let expected_opnd: Opnd = match expected {
-        crate::hir::Const::Value(v) => { Opnd::Value(v) }
+        crate::hir::Const::Value(v) => {
+            asm.tag_value_reloc(v, crate::reloc::RelocKind::CME);
+            Opnd::Value(v)
+        }
         crate::hir::Const::CInt64(v) => { v.into() }
         crate::hir::Const::CShape(v) => { Opnd::UImm(v.0 as u64) }
         _ => panic!("gen_guard_bit_equals: unexpected hir::Const {expected:?}"),
@@ -2699,6 +2809,11 @@ fn gen_guard_no_bits_set(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd
 /// Generate code that records unoptimized C functions if --zjit-stats is enabled
 fn gen_incr_counter_ptr(asm: &mut Assembler, counter_ptr: *mut u64) {
     if get_option!(stats) {
+        // Tag counter pointer for relocation. Use the pointer value as the ID
+        // since dynamic counters (per-method stats) don't have a Counter enum variant.
+        asm.tag_ptr_reloc(counter_ptr as *const u8, crate::reloc::RelocKind::Counter {
+            counter_id: counter_ptr as u32,
+        });
         asm.incr_counter(Opnd::const_ptr(counter_ptr as *const u8), Opnd::UImm(1));
     }
 }
@@ -2776,7 +2891,14 @@ fn gen_save_pc_for_gc(asm: &mut Assembler, state: &FrameState) {
     if let Some(pc) = PC_POISON {
         asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), Opnd::const_ptr(pc));
     }
-    let jit_frame = JITFrame::new_iseq(next_pc, state.iseq, !iseq_may_write_block_code(state.iseq));
+    let materialize_block_code = !iseq_may_write_block_code(state.iseq);
+    let body_start = unsafe { get_iseq_body_iseq_encoded(state.iseq) } as *const u8;
+    let pc_offset = unsafe { (next_pc as *const u8).offset_from(body_start) } as u32;
+    let jit_frame = JITFrame::new_iseq(next_pc, state.iseq, materialize_block_code);
+    asm.tag_ptr_reloc(jit_frame as *const u8, crate::reloc::RelocKind::JITFrame {
+        pc_offset,
+        materialize_block_code,
+    });
     asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), Opnd::const_ptr(jit_frame));
 }
 
@@ -2850,6 +2972,8 @@ fn gen_spill_stack(jit: &JITState, asm: &mut Assembler, state: &FrameState) {
 /// Prepare for calling a C function that may call an arbitrary method.
 /// Use gen_prepare_leaf_call_with_gc() if the method is leaf but allocates objects.
 fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, state: &FrameState) {
+    debug_assert_eq!(state.iseq, jit.iseq,
+        "FrameState.iseq should always be the self ISEQ for JITFrame serialization");
     // TODO: Lazily materialize caller frames when needed
     // Save PC for backtraces and allocation tracing
     // and SP to avoid marking uninitialized stack slots
@@ -2927,6 +3051,10 @@ fn gen_push_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: C
         // can be used as an ifunc pointer, causing a segfault.
         asm.mov(cfp_opnd(RUBY_OFFSET_CFP_BLOCK_CODE), 0.into());
         let jit_frame = JITFrame::new_cfunc();
+        asm.tag_ptr_reloc(jit_frame as *const u8, crate::reloc::RelocKind::JITFrame {
+            pc_offset: 0,
+            materialize_block_code: false,
+        });
         asm.mov(cfp_opnd(RUBY_OFFSET_CFP_JIT_RETURN), Opnd::const_ptr(jit_frame));
     }
 
@@ -3305,7 +3433,7 @@ fn gen_function_stub(cb: &mut CodeBlock, iseq_call: IseqCallRef) -> Result<CodeP
     asm.cpush(scratch_reg);
     asm.jmp(ZJITState::get_function_stub_hit_trampoline().into());
 
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
+    asm.compile(cb).map(|(code_ptr, gc_offsets, _reloc_entries)| {
         assert_eq!(gc_offsets.len(), 0);
         code_ptr
     })
@@ -3374,7 +3502,7 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
     // Jump to scratch_reg so that cpop_into() doesn't clobber it
     asm.jmp_opnd(scratch_reg);
 
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
+    asm.compile(cb).map(|(code_ptr, gc_offsets, _reloc_entries)| {
         assert_eq!(gc_offsets.len(), 0);
         code_ptr
     })
@@ -3389,7 +3517,7 @@ pub fn gen_exit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> 
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()
     asm.cret(Qundef.into());
 
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
+    asm.compile(cb).map(|(code_ptr, gc_offsets, _reloc_entries)| {
         assert_eq!(gc_offsets.len(), 0);
         code_ptr
     })
@@ -3404,7 +3532,7 @@ pub fn gen_exit_trampoline_with_counter(cb: &mut CodeBlock, exit_trampoline: Cod
     gen_incr_counter(&mut asm, exit_compile_error);
     asm.jmp(Target::CodePtr(exit_trampoline));
 
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
+    asm.compile(cb).map(|(code_ptr, gc_offsets, _reloc_entries)| {
         assert_eq!(gc_offsets.len(), 0);
         code_ptr
     })
@@ -3520,7 +3648,7 @@ fn gen_compile_error_counter(cb: &mut CodeBlock, compile_error: &CompileError) -
     gen_incr_counter(&mut asm, exit_counter_for_compile_error(compile_error));
     asm.cret(Qundef.into());
 
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
+    asm.compile(cb).map(|(code_ptr, gc_offsets, _reloc_entries)| {
         assert_eq!(0, gc_offsets.len());
         code_ptr
     })
@@ -3599,16 +3727,16 @@ pub struct IseqCall {
     pub iseq: Cell<IseqPtr>,
 
     /// Index that corresponds to an entry in [crate::cruby::IseqParameters::opt_table_slice]
-    jit_entry_idx: u16,
+    pub jit_entry_idx: u16,
 
     /// Argument count passing to the HIR function
     argc: u16,
 
     /// Position where the call instruction starts
-    start_addr: Cell<Option<CodePtr>>,
+    pub start_addr: Cell<Option<CodePtr>>,
 
     /// Position where the call instruction ends (exclusive)
-    end_addr: Cell<Option<CodePtr>>,
+    pub end_addr: Cell<Option<CodePtr>>,
 }
 
 pub type IseqCallRef = Rc<IseqCall>;

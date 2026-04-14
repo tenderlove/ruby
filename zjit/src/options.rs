@@ -114,6 +114,9 @@ pub struct Options {
 
     /// Maximum number of versions per ISEQ
     pub max_versions: usize,
+
+    /// Path to the cache file for serializing/deserializing compiled code
+    pub cache_path: Option<std::path::PathBuf>,
 }
 
 impl Default for Options {
@@ -142,6 +145,7 @@ impl Default for Options {
             allowed_iseqs: None,
             log_compiled_iseqs: None,
             max_versions: 2,
+            cache_path: None,
         }
     }
 }
@@ -501,6 +505,10 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
                 .ok();
             let opt_val = std::fs::canonicalize(opt_val).unwrap_or_else(|_| opt_val.into());
             options.log_compiled_iseqs = Some(opt_val);
+        }
+
+        ("cache", _) if !opt_val.is_empty() => {
+            options.cache_path = Some(opt_val.into());
         }
 
         _ => return None, // Option name not recognized

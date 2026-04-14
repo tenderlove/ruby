@@ -37,8 +37,17 @@ pub struct IseqVersion {
     /// Compilation status of the ISEQ. It has the JIT code address of the first block if Compiled.
     pub status: IseqStatus,
 
+    /// End of the compiled code region (exclusive). Set after compilation for serialization.
+    pub end_ptr: Option<CodePtr>,
+
     /// GC offsets of the JIT code. These are the addresses of objects that need to be marked.
     pub gc_offsets: Vec<CodePtr>,
+
+    /// Relocation entries for serialization/deserialization of compiled code.
+    pub reloc_entries: Vec<crate::reloc::RelocEntry>,
+
+    /// Invariant assumptions this compiled code depends on, recorded for serialization.
+    pub invariant_deps: Vec<crate::reloc::InvariantDep>,
 
     /// JIT-to-JIT calls from the ISEQ. The IseqPayload's ISEQ is the caller of it.
     pub outgoing: Vec<IseqCallRef>,
@@ -61,7 +70,10 @@ impl IseqVersion {
         let version = Self {
             iseq,
             status: IseqStatus::NotCompiled,
+            end_ptr: None,
             gc_offsets: vec![],
+            reloc_entries: vec![],
+            invariant_deps: vec![],
             outgoing: vec![],
             incoming: vec![],
         };

@@ -16,6 +16,9 @@ module RubyVM::ZJIT
   if Primitive.rb_zjit_print_stats_p
     at_exit { print_stats }
   end
+  if Primitive.rb_zjit_get_cache_path_p
+    at_exit { dump_cache }
+  end
 end
 
 class << RubyVM::ZJIT
@@ -278,6 +281,11 @@ class << RubyVM::ZJIT
     File.open(filename, "wb") do |file|
       file.write stats_string
     end
+  end
+
+  # Dump compiled JIT code to cache file
+  def dump_cache
+    Primitive.rb_zjit_dump_cache
   end
 
 end

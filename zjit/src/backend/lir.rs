@@ -1652,6 +1652,10 @@ pub struct Assembler {
 
     /// Current instruction index, incremented for each instruction pushed
     idx: usize,
+
+    /// Side-table mapping VALUE bit patterns to their relocation semantics.
+    /// Populated during codegen, consumed during emission to build RelocEntry records.
+    pub value_relocs: HashMap<u64, crate::reloc::RelocKind>,
 }
 
 impl Assembler
@@ -1667,6 +1671,7 @@ impl Assembler
             current_block_id: BlockId(0),
             num_vregs: 0,
             idx: 0,
+            value_relocs: HashMap::default(),
         }
     }
 
@@ -1688,6 +1693,7 @@ impl Assembler
             label_names: old_asm.label_names.clone(),
             accept_scratch_reg: old_asm.accept_scratch_reg,
             stack_base_idx: old_asm.stack_base_idx,
+            value_relocs: old_asm.value_relocs.clone(),
             ..Self::new()
         };
 
@@ -1702,6 +1708,21 @@ impl Assembler
         asm.num_vregs = old_asm.num_vregs;
 
         asm
+    }
+
+    /// Record that `val` should be tagged with the given relocation kind during emission.
+    pub fn tag_value_reloc(&mut self, val: VALUE, kind: crate::reloc::RelocKind) {
+        self.value_relocs.insert(val.as_u64(), kind);
+    }
+
+    /// Record that a C function pointer should be tagged for relocation.
+    pub fn tag_cfunc_reloc(&mut self, fptr: *const u8, name: &'static str) {
+        self.value_relocs.insert(fptr as u64, crate::reloc::RelocKind::CFunc { name });
+    }
+
+    /// Record that a raw pointer should be tagged with the given relocation kind.
+    pub fn tag_ptr_reloc(&mut self, ptr: *const u8, kind: crate::reloc::RelocKind) {
+        self.value_relocs.insert(ptr as u64, kind);
     }
 
     // Create a new LIR basic block.  Returns the newly created block ID
@@ -2583,7 +2604,7 @@ impl Assembler
 
     /// Compile the instructions down to machine code.
     /// Can fail due to lack of code memory and inopportune code placement, among other reasons.
-    pub fn compile(self, cb: &mut CodeBlock) -> Result<(CodePtr, Vec<CodePtr>), CompileError> {
+    pub fn compile(self, cb: &mut CodeBlock) -> Result<(CodePtr, Vec<CodePtr>, Vec<crate::reloc::RelocEntry>), CompileError> {
         #[cfg(feature = "disasm")]
         let start_addr = cb.get_write_ptr();
         let alloc_regs = Self::get_alloc_regs();
@@ -2610,7 +2631,8 @@ impl Assembler
     pub fn compile_with_num_regs(self, cb: &mut CodeBlock, num_regs: usize) -> (CodePtr, Vec<CodePtr>) {
         let mut alloc_regs = Self::get_alloc_regs();
         let alloc_regs = alloc_regs.drain(0..num_regs).collect();
-        self.compile_with_regs(cb, alloc_regs).unwrap()
+        let (code_ptr, gc_offsets, _reloc_entries) = self.compile_with_regs(cb, alloc_regs).unwrap();
+        (code_ptr, gc_offsets)
     }
 
     /// Compile Target::SideExit and convert it into Target::Label for all instructions.
@@ -3798,6 +3820,7 @@ impl Assembler {
         asm_local.stack_base_idx = self.stack_base_idx;
         asm_local.label_names = self.label_names.clone();
         asm_local.num_vregs = self.num_vregs;
+        asm_local.value_relocs = self.value_relocs.clone();
 
         // Create one giant block to linearize everything into
         asm_local.new_block_without_id("linearized");
@@ -3845,6 +3868,7 @@ macro_rules! asm_ccall {
     [$asm: ident, $fn_name:ident, $($args:expr),* ] => {{
         $crate::backend::lir::asm_comment!($asm, concat!("call ", stringify!($fn_name)));
         $asm.count_call_to(stringify!($fn_name));
+        $asm.tag_cfunc_reloc($fn_name as *const u8, stringify!($fn_name));
         $asm.ccall($fn_name as *const u8, vec![$($args),*])
     }};
 }

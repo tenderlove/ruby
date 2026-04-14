@@ -737,6 +737,7 @@ impl Assembler {
         asm_local.stack_base_idx = self.stack_base_idx;
         asm_local.label_names = self.label_names.clone();
         asm_local.num_vregs = self.num_vregs;
+        asm_local.value_relocs = self.value_relocs.clone();
 
         // Create one giant block to linearize everything into
         asm_local.new_block_without_id("linearized");
@@ -902,7 +903,7 @@ impl Assembler {
 
     /// Emit platform-specific machine code
     /// Returns a list of GC offsets. Can return failure to signal caller to retry.
-    fn arm64_emit(&mut self, cb: &mut CodeBlock) -> Result<Vec<CodePtr>, CompileError> {
+    fn arm64_emit(&mut self, cb: &mut CodeBlock) -> Result<(Vec<CodePtr>, Vec<crate::reloc::RelocEntry>), CompileError> {
         /// Determine how many instructions it will take to represent moving
         /// this value into a register. Note that the return value of this
         /// function must correspond to how many instructions are used to
@@ -1061,7 +1062,14 @@ impl Assembler {
         }
 
         /// Load a VALUE to a register and remember it for GC marking and reference updating
-        fn emit_load_gc_value(cb: &mut CodeBlock, gc_offsets: &mut Vec<CodePtr>, dest: A64Opnd, value: VALUE) {
+        fn emit_load_gc_value(
+            cb: &mut CodeBlock,
+            gc_offsets: &mut Vec<CodePtr>,
+            reloc_entries: &mut Vec<crate::reloc::RelocEntry>,
+            value_relocs: &std::collections::HashMap<u64, crate::reloc::RelocKind>,
+            dest: A64Opnd,
+            value: VALUE,
+        ) {
             // We dont need to check if it's a special const
             // here because we only allow these operands to hit
             // this point if they're not a special const.
@@ -1077,6 +1085,27 @@ impl Assembler {
 
             let ptr_offset = cb.get_write_ptr().sub_bytes(SIZEOF_VALUE);
             gc_offsets.push(ptr_offset);
+
+            if let Some(&kind) = value_relocs.get(&value.as_u64()) {
+                reloc_entries.push(crate::reloc::RelocEntry { offset: ptr_offset, kind });
+            }
+        }
+
+        /// Load a non-GC pointer that needs relocation using ldr_literal (contiguous 8-byte
+        /// literal in the code stream). This makes the pointer trivially patchable at load time.
+        fn emit_load_reloc_ptr(
+            cb: &mut CodeBlock,
+            reloc_entries: &mut Vec<crate::reloc::RelocEntry>,
+            kind: crate::reloc::RelocKind,
+            dest: A64Opnd,
+            value: u64,
+        ) {
+            ldr_literal(cb, dest, 2.into());
+            b(cb, InstructionOffset::from_bytes(4 + (SIZEOF_VALUE as i32)));
+            cb.write_bytes(&value.to_le_bytes());
+
+            let ptr_offset = cb.get_write_ptr().sub_bytes(SIZEOF_VALUE);
+            reloc_entries.push(crate::reloc::RelocEntry { offset: ptr_offset, kind });
         }
 
         /// Push a value to the stack by subtracting from the stack pointer then storing,
@@ -1092,6 +1121,10 @@ impl Assembler {
 
         // List of GC offsets
         let mut gc_offsets: Vec<CodePtr> = Vec::new();
+
+        // List of relocation entries
+        let mut reloc_entries: Vec<crate::reloc::RelocEntry> = Vec::new();
+        let value_relocs = &self.value_relocs;
 
         // Buffered list of PosMarker callbacks to fire if codegen is successful
         let mut pos_markers: Vec<(usize, CodePtr)> = vec![];
@@ -1273,11 +1306,15 @@ impl Assembler {
                             Self::EMIT_REG
                         }
                         &Opnd::UImm(imm) => {
-                            emit_load_value(cb, Self::EMIT_OPND, imm);
+                            if let Some(&kind) = value_relocs.get(&imm) {
+                                emit_load_reloc_ptr(cb, &mut reloc_entries, kind, Self::EMIT_OPND, imm);
+                            } else {
+                                emit_load_value(cb, Self::EMIT_OPND, imm);
+                            }
                             Self::EMIT_REG
                         }
                         &Opnd::Value(value) => {
-                            emit_load_gc_value(cb, &mut gc_offsets, Self::EMIT_OPND, value);
+                            emit_load_gc_value(cb, &mut gc_offsets, &mut reloc_entries, value_relocs, Self::EMIT_OPND, value);
                             Self::EMIT_REG
                         }
                         src_mem @ &Opnd::Mem(Mem { num_bits: src_num_bits, base: MemBase::Reg(src_base_reg_no), disp: src_disp }) => {
@@ -1320,7 +1357,11 @@ impl Assembler {
                             mov(cb, out.into(), opnd.into());
                         },
                         Opnd::UImm(uimm) => {
-                            emit_load_value(cb, out.into(), uimm);
+                            if let Some(&kind) = value_relocs.get(&uimm) {
+                                emit_load_reloc_ptr(cb, &mut reloc_entries, kind, out.into(), uimm);
+                            } else {
+                                emit_load_value(cb, out.into(), uimm);
+                            }
                         },
                         Opnd::Imm(imm) => {
                             emit_load_value(cb, out.into(), imm as u64);
@@ -1334,7 +1375,7 @@ impl Assembler {
                             };
                         },
                         Opnd::Value(value) => {
-                            emit_load_gc_value(cb, &mut gc_offsets, out.into(), value);
+                            emit_load_gc_value(cb, &mut gc_offsets, &mut reloc_entries, value_relocs, out.into(), value);
                         },
                         Opnd::None => {
                             unreachable!("Attempted to load from None operand");
@@ -1429,17 +1470,21 @@ impl Assembler {
                 Insn::CCall { fptr, .. } => {
                     match fptr {
                         Opnd::UImm(fptr) => {
-                            // The offset to the call target in bytes
-                            let src_addr = cb.get_write_ptr().raw_ptr(cb) as i64;
-                            let dst_addr = *fptr as i64;
-
-                            // Use BL if the offset is short enough to encode as an immediate.
-                            // Otherwise, use BLR with a register.
-                            if b_offset_fits_bits((dst_addr - src_addr) / 4) {
-                                bl(cb, InstructionOffset::from_bytes((dst_addr - src_addr) as i32));
-                            } else {
-                                emit_load_value(cb, Self::EMIT_OPND, dst_addr as u64);
+                            if let Some(&kind) = value_relocs.get(fptr) {
+                                // Tagged pointer: use absolute encoding (ldr_literal)
+                                // so it can be patched during deserialization.
+                                emit_load_reloc_ptr(cb, &mut reloc_entries, kind, Self::EMIT_OPND, *fptr);
                                 blr(cb, Self::EMIT_OPND);
+                            } else {
+                                // Untagged pointer: use BL if offset fits, else absolute.
+                                let src_addr = cb.get_write_ptr().raw_ptr(cb) as i64;
+                                let dst_addr = *fptr as i64;
+                                if b_offset_fits_bits((dst_addr - src_addr) / 4) {
+                                    bl(cb, InstructionOffset::from_bytes((dst_addr - src_addr) as i32));
+                                } else {
+                                    emit_load_value(cb, Self::EMIT_OPND, *fptr);
+                                    blr(cb, Self::EMIT_OPND);
+                                }
                             }
                         }
                         Opnd::Reg(_) => {
@@ -1600,12 +1645,12 @@ impl Assembler {
                 }
             }
 
-            Ok(gc_offsets)
+            Ok((gc_offsets, reloc_entries))
         }
     }
 
     /// Optimize and compile the stored instructions
-    pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Result<(CodePtr, Vec<CodePtr>), CompileError> {
+    pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Result<(CodePtr, Vec<CodePtr>, Vec<crate::reloc::RelocEntry>), CompileError> {
         // The backend is allowed to use scratch registers only if it has not accepted them so far.
         let use_scratch_reg = !self.accept_scratch_reg;
         asm_dump!(self, init);
@@ -1713,7 +1758,7 @@ impl Assembler {
             }
 
             let start_ptr = cb.get_write_ptr();
-            let gc_offsets = asm.arm64_emit(cb).inspect_err(|_| cb.clear_labels())?;
+            let (gc_offsets, reloc_entries) = asm.arm64_emit(cb).inspect_err(|_| cb.clear_labels())?;
             assert!(!cb.has_dropped_bytes(), "emit should not drop bytes without error");
 
             cb.link_labels().or(Err(CompileError::LabelLinkingFailure))?;
@@ -1721,7 +1766,7 @@ impl Assembler {
             // Invalidate icache for newly written out region so we don't run stale code.
             unsafe { rb_jit_icache_invalidate(start_ptr.raw_ptr(cb) as _, cb.get_write_ptr().raw_ptr(cb) as _) };
 
-            Ok((start_ptr, gc_offsets))
+            Ok((start_ptr, gc_offsets, reloc_entries))
         })
     }
 }
@@ -2161,7 +2206,7 @@ mod tests {
         for name in &asm.label_names {
             cb.new_label(name.to_string());
         }
-        let gc_offsets = asm.arm64_emit(&mut cb).unwrap();
+        let (gc_offsets, _reloc_entries) = asm.arm64_emit(&mut cb).unwrap();
         assert_eq!(1, gc_offsets.len(), "VALUE source operand should be reported as gc offset");
 
         assert_disasm_snapshot!(cb.disasm(), @"

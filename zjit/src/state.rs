@@ -74,6 +74,9 @@ pub struct ZJITState {
 
     /// Frame metadata for ISEQ and C calls that are known at compile time
     jit_frames: Vec<*mut JITFrame>,
+
+    /// Loaded cache index for code deserialization (populated from --zjit-cache)
+    cache_index: Option<crate::cache::CacheIndex>,
 }
 
 /// Tracks the initialization progress
@@ -152,6 +155,7 @@ impl ZJITState {
             iseq_calls_count_pointers: HashMap::new(),
             perfetto_tracer,
             jit_frames: vec![],
+            cache_index: get_option!(cache_path).as_ref().and_then(|p| crate::cache::load_cache(p)),
         };
         unsafe { ZJIT_STATE = Enabled(zjit_state); }
 
@@ -193,6 +197,11 @@ impl ZJITState {
 
     pub fn get_jit_frames() -> &'static mut Vec<*mut JITFrame> {
         &mut ZJITState::get_instance().jit_frames
+    }
+
+    /// Get the loaded cache index, if any
+    pub fn get_cache_index() -> Option<&'static crate::cache::CacheIndex> {
+        ZJITState::get_instance().cache_index.as_ref()
     }
 
     pub fn get_method_annotations() -> &'static cruby_methods::Annotations {

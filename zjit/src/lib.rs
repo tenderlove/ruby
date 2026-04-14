@@ -31,6 +31,8 @@ mod bitset;
 mod gc;
 mod jit_frame;
 mod payload;
+mod reloc;
+mod cache;
 mod json;
 mod ttycolors;
 

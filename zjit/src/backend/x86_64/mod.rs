@@ -443,6 +443,7 @@ impl Assembler {
         asm_local.stack_base_idx = self.stack_base_idx;
         asm_local.label_names = self.label_names.clone();
         asm_local.num_vregs = self.num_vregs;
+        asm_local.value_relocs = self.value_relocs.clone();
 
         // Create one giant block to linearize everything into
         asm_local.new_block_without_id("linearized");
@@ -678,7 +679,7 @@ impl Assembler {
     }
 
     /// Emit platform-specific machine code
-    pub fn x86_emit(&mut self, cb: &mut CodeBlock) -> Result<Vec<CodePtr>, CompileError> {
+    pub fn x86_emit(&mut self, cb: &mut CodeBlock) -> Result<(Vec<CodePtr>, Vec<crate::reloc::RelocEntry>), CompileError> {
         fn emit_csel(
             cb: &mut CodeBlock,
             truthy: Opnd,
@@ -743,16 +744,31 @@ impl Assembler {
             }
         }
 
-        fn emit_load_gc_value(cb: &mut CodeBlock, gc_offsets: &mut Vec<CodePtr>, dest_reg: X86Opnd, value: VALUE) {
+        fn emit_load_gc_value(
+            cb: &mut CodeBlock,
+            gc_offsets: &mut Vec<CodePtr>,
+            reloc_entries: &mut Vec<crate::reloc::RelocEntry>,
+            value_relocs: &std::collections::HashMap<u64, crate::reloc::RelocKind>,
+            dest_reg: X86Opnd,
+            value: VALUE,
+        ) {
             // Using movabs because mov might write value in 32 bits
             movabs(cb, dest_reg, value.0 as _);
             // The pointer immediate is encoded as the last part of the mov written out
             let ptr_offset = cb.get_write_ptr().sub_bytes(SIZEOF_VALUE);
             gc_offsets.push(ptr_offset);
+
+            if let Some(&kind) = value_relocs.get(&value.as_u64()) {
+                reloc_entries.push(crate::reloc::RelocEntry { offset: ptr_offset, kind });
+            }
         }
 
         // List of GC offsets
         let mut gc_offsets: Vec<CodePtr> = Vec::new();
+
+        // List of relocation entries
+        let mut reloc_entries: Vec<crate::reloc::RelocEntry> = Vec::new();
+        let value_relocs = &self.value_relocs;
 
         // Buffered list of PosMarker callbacks to fire if codegen is successful
         let mut pos_markers: Vec<(usize, CodePtr)> = vec![];
@@ -871,7 +887,14 @@ impl Assembler {
                 Insn::LoadInto { dest: out, opnd } => {
                     match opnd {
                         Opnd::Value(val) if val.heap_object_p() => {
-                            emit_load_gc_value(cb, &mut gc_offsets, out.into(), *val);
+                            emit_load_gc_value(cb, &mut gc_offsets, &mut reloc_entries, value_relocs, out.into(), *val);
+                        }
+                        Opnd::UImm(uimm) if value_relocs.contains_key(uimm) => {
+                            let kind = value_relocs[uimm];
+                            // Use movabs to store the pointer as a contiguous 8-byte immediate
+                            movabs(cb, out.into(), *uimm as _);
+                            let ptr_offset = cb.get_write_ptr().sub_bytes(SIZEOF_VALUE);
+                            reloc_entries.push(crate::reloc::RelocEntry { offset: ptr_offset, kind });
                         }
                         _ => mov(cb, out.into(), opnd.into())
                     }
@@ -933,7 +956,15 @@ impl Assembler {
                 Insn::CCall { fptr, .. } => {
                     match fptr {
                         Opnd::UImm(fptr) => {
-                            call_ptr(cb, RAX, *fptr as *const u8);
+                            // Always use absolute addressing for C function calls.
+                            // This avoids PC-relative encoding so that serialized
+                            // code can be relocated without recalculating offsets.
+                            movabs(cb, RAX.into(), *fptr as _);
+                            if let Some(&kind) = value_relocs.get(fptr) {
+                                let ptr_offset = cb.get_write_ptr().sub_bytes(SIZEOF_VALUE);
+                                reloc_entries.push(crate::reloc::RelocEntry { offset: ptr_offset, kind });
+                            }
+                            call(cb, RAX.into());
                         }
                         Opnd::Reg(_) => {
                             call(cb, fptr.into());
@@ -1133,12 +1164,12 @@ impl Assembler {
                 }
             }
 
-            Ok(gc_offsets)
+            Ok((gc_offsets, reloc_entries))
         }
     }
 
     /// Optimize and compile the stored instructions
-    pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Result<(CodePtr, Vec<CodePtr>), CompileError> {
+    pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Result<(CodePtr, Vec<CodePtr>, Vec<crate::reloc::RelocEntry>), CompileError> {
         // The backend is allowed to use scratch registers only if it has not accepted them so far.
         let use_scratch_regs = !self.accept_scratch_reg;
         asm_dump!(self, init);
@@ -1246,11 +1277,11 @@ impl Assembler {
             }
 
             let start_ptr = cb.get_write_ptr();
-            let gc_offsets = asm.x86_emit(cb).inspect_err(|_| cb.clear_labels())?;
+            let (gc_offsets, reloc_entries) = asm.x86_emit(cb).inspect_err(|_| cb.clear_labels())?;
             assert!(!cb.has_dropped_bytes(), "emit should not drop bytes without error");
 
             cb.link_labels().or(Err(CompileError::LabelLinkingFailure))?;
-            Ok((start_ptr, gc_offsets))
+            Ok((start_ptr, gc_offsets, reloc_entries))
         })
     }
 }

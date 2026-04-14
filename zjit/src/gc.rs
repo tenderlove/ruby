@@ -194,6 +194,11 @@ pub fn append_gc_offsets(iseq: IseqPtr, mut version: IseqVersionRef, offsets: &V
     }
 }
 
+/// Append relocation entries to the iseq version's payload
+pub fn append_reloc_entries(mut version: IseqVersionRef, entries: Vec<crate::reloc::RelocEntry>) {
+    unsafe { version.as_mut() }.reloc_entries.extend(entries);
+}
+
 /// Remove GC offsets that overlap with a given removed_range.
 /// We do this when invalidation rewrites some code with a jump instruction
 /// and GC offsets are corrupted by the rewrite, assuming no on-stack code
@@ -201,6 +206,10 @@ pub fn append_gc_offsets(iseq: IseqPtr, mut version: IseqVersionRef, offsets: &V
 pub fn remove_gc_offsets(mut version: IseqVersionRef, removed_range: &Range<CodePtr>) {
     unsafe { version.as_mut() }.gc_offsets.retain(|&gc_offset| {
         let offset_range = gc_offset..(gc_offset.add_bytes(SIZEOF_VALUE));
+        !ranges_overlap(&offset_range, removed_range)
+    });
+    unsafe { version.as_mut() }.reloc_entries.retain(|entry| {
+        let offset_range = entry.offset..(entry.offset.add_bytes(SIZEOF_VALUE));
         !ranges_overlap(&offset_range, removed_range)
     });
 }

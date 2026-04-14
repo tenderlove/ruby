@@ -1676,6 +1676,18 @@ rb_add_method_iseq(VALUE klass, ID mid, const rb_iseq_t *iseq, rb_cref_t *cref, 
     iseq_body.cref = cref;
 
     rb_add_method(klass, mid, VM_METHOD_TYPE_ISEQ, &iseq_body, visi);
+
+#if USE_ZJIT
+    // If the ZJIT cache has code for this method, install it immediately
+    // so it's JIT-compiled from the first call.
+    if (rb_zjit_entry) {
+        uint8_t *rb_zjit_try_load_cached_code(const rb_iseq_t *iseq);
+        uintptr_t code_ptr = (uintptr_t)rb_zjit_try_load_cached_code(iseq);
+        if (code_ptr) {
+            iseq->body->jit_entry = (rb_jit_func_t)code_ptr;
+        }
+    }
+#endif
 }
 
 static rb_method_entry_t *
