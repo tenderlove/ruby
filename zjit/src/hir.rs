@@ -2646,6 +2646,46 @@ unsafe fn check_ffi_trampoline(cfunc_ptr: *const u8) -> Option<FfiTrampoline> {
     })
 }
 
+/// Returns `true` when every FFI type byte in `meta` is something ZJIT's
+/// FfiCall codegen can currently handle.
+///
+/// The backend's `CCall` lowering only routes arguments and return values
+/// through general-purpose registers, so float/double (type bytes 6 and 7)
+/// cannot be passed or returned correctly. When those appear we leave
+/// the call on the normal cfunc path instead of specializing it.
+#[cfg(target_arch = "aarch64")]
+fn ffi_meta_supports_direct_call(meta: &FfiTrampoline) -> bool {
+    let supported = |ty: u8| matches!(ty, 0 | 1 | 2 | 3 | 4 | 5 | 8);
+    supported(meta.ffi_return_type) && meta.param_types.iter().all(|&t| supported(t))
+}
+
+/// Guard each FfiCall argument so codegen can rely on a known Ruby type.
+///
+/// String args (type 3) are guarded as `StringExact`; integer/pointer args
+/// (types 1, 2, 4, 5, 8) are guarded as `Fixnum` so codegen can untag via a
+/// single arithmetic shift. Other types should have been filtered out by
+/// [`ffi_meta_supports_direct_call`] before we get here.
+#[cfg(target_arch = "aarch64")]
+fn guard_ffi_args(
+    fun: &mut Function,
+    block: BlockId,
+    args: &[InsnId],
+    param_types: &[u8],
+    state: InsnId,
+) -> Vec<InsnId> {
+    args.iter().enumerate().map(|(i, &arg)| {
+        match param_types.get(i).copied() {
+            Some(3) => fun.push_insn(block, Insn::GuardType {
+                val: arg, guard_type: types::StringExact, state,
+            }),
+            Some(1) | Some(2) | Some(4) | Some(5) | Some(8) => fun.push_insn(block, Insn::GuardType {
+                val: arg, guard_type: types::Fixnum, state,
+            }),
+            _ => arg,
+        }
+    }).collect()
+}
+
 impl Function {
     fn new(iseq: *const rb_iseq_t) -> Function {
         Function {
@@ -3156,7 +3196,11 @@ impl Function {
             Insn::CCall { return_type, .. } => *return_type,
             Insn::FfiCall { ffi_return_type, .. } => {
                 match ffi_return_type {
-                    5 => types::Fixnum, // size_t
+                    0 => types::NilClass,         // void -> Qnil
+                    1 | 4 => types::Fixnum,       // 32-bit int/uint always fits in Fixnum
+                    3 => types::StringExact,      // rb_str_new_cstr result
+                    // long/size_t/pointer may overflow Fixnum into Bignum,
+                    // and HIR has already rejected float/double returns.
                     _ => types::BasicObject,
                 }
             },
@@ -4280,22 +4324,17 @@ impl Function {
                             let cfunc_argc = unsafe { get_mct_argc(cfunc) };
                             let cfunc_ptr = unsafe { get_mct_func(cfunc) }.cast();
 
-                            // Check for FFI trampoline metadata embedded in the cfunc
+                            // Check for FFI trampoline metadata embedded in the cfunc.
+                            // Only specialize when every arg/return type is something
+                            // codegen can handle; otherwise fall through to the
+                            // normal cfunc path below.
                             #[cfg(target_arch = "aarch64")]
-                            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) } {
+                            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) }
+                                .filter(ffi_meta_supports_direct_call)
+                            {
                                 emit_super_call_guards(self, block, super_cme, current_cme, mid, state);
 
-                                // Guard arg types based on FFI metadata
-                                let mut guarded_args = Vec::with_capacity(args.len());
-                                for (i, &arg) in args.iter().enumerate() {
-                                    let guarded = match ffi_meta.param_types.get(i) {
-                                        Some(&3) => { // string
-                                            self.push_insn(block, Insn::GuardType { val: arg, guard_type: types::StringExact, state })
-                                        }
-                                        _ => arg,
-                                    };
-                                    guarded_args.push(guarded);
-                                }
+                                let guarded_args = guard_ffi_args(self, block, &args, &ffi_meta.param_types, state);
 
                                 let name = rust_str_to_id(&qualified_method_name(unsafe { (*super_cme).owner }, unsafe { (*super_cme).called_id }));
                                 let ffi_call = self.push_insn(block, Insn::FfiCall {
@@ -4907,9 +4946,12 @@ impl Function {
             let cfunc_argc = unsafe { get_mct_argc(cfunc) };
             let cfunc_ptr = unsafe { get_mct_func(cfunc) }.cast();
 
-            // Check for FFI trampoline metadata embedded in the cfunc
+            // Check for FFI trampoline metadata embedded in the cfunc.
+            // Only specialize if codegen can handle every arg/return type.
             #[cfg(target_arch = "aarch64")]
-            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) } {
+            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) }
+                .filter(ffi_meta_supports_direct_call)
+            {
                 // Check singleton class assumption first
                 if !fun.assume_no_singleton_classes(block, recv_class, state) {
                     fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
@@ -4923,17 +4965,7 @@ impl Function {
                     fun.insn_types[recv.0] = fun.infer_type(recv);
                 }
 
-                // Guard arg types based on FFI metadata
-                let mut guarded_args = Vec::with_capacity(args.len());
-                for (i, &arg) in args.iter().enumerate() {
-                    let guarded = match ffi_meta.param_types.get(i) {
-                        Some(&3) => { // string
-                            fun.push_insn(block, Insn::GuardType { val: arg, guard_type: types::StringExact, state })
-                        }
-                        _ => arg,
-                    };
-                    guarded_args.push(guarded);
-                }
+                let guarded_args = guard_ffi_args(fun, block, &args, &ffi_meta.param_types, state);
 
                 let name = rust_str_to_id(&qualified_method_name(unsafe { (*cme).owner }, unsafe { (*cme).called_id }));
                 let ffi_call = fun.push_insn(block, Insn::FfiCall {
@@ -5097,9 +5129,12 @@ impl Function {
             let cfunc_argc = unsafe { get_mct_argc(cfunc) };
             let cfunc_ptr: *const u8 = unsafe { get_mct_func(cfunc) }.cast();
 
-            // Check for FFI trampoline metadata embedded in the cfunc
+            // Check for FFI trampoline metadata embedded in the cfunc.
+            // Only specialize if codegen can handle every arg/return type.
             #[cfg(target_arch = "aarch64")]
-            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) } {
+            if let Some(ffi_meta) = unsafe { check_ffi_trampoline(cfunc_ptr) }
+                .filter(ffi_meta_supports_direct_call)
+            {
                 // Check singleton class assumption first
                 if !fun.assume_no_singleton_classes(block, recv_class, state) {
                     fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
@@ -5113,17 +5148,7 @@ impl Function {
                     fun.insn_types[recv.0] = fun.infer_type(recv);
                 }
 
-                // Guard arg types based on FFI metadata
-                let mut guarded_args = Vec::with_capacity(args.len());
-                for (i, &arg) in args.iter().enumerate() {
-                    let guarded = match ffi_meta.param_types.get(i) {
-                        Some(&3) => { // string
-                            fun.push_insn(block, Insn::GuardType { val: arg, guard_type: types::StringExact, state })
-                        }
-                        _ => arg,
-                    };
-                    guarded_args.push(guarded);
-                }
+                let guarded_args = guard_ffi_args(fun, block, &args, &ffi_meta.param_types, state);
 
                 let name = rust_str_to_id(&qualified_method_name(unsafe { (*cme).owner }, unsafe { (*cme).called_id }));
                 let ffi_call = fun.push_insn(block, Insn::FfiCall {

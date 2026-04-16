@@ -1105,35 +1105,93 @@ fn gen_ccall(asm: &mut Assembler, cfunc: *const u8, name: ID, recv: Opnd, args: 
 
 /// Generate a direct native call via FFI trampoline metadata.
 /// Converts Ruby VALUE args to C types, calls the native function, and converts the return.
+///
+/// FFX type byte encoding:
+///   0 = void, 1 = int, 2 = long, 3 = string (`const char *`),
+///   4 = uint, 5 = size_t, 6 = double, 7 = float, 8 = pointer.
+///
+/// HIR is responsible for guarding arg types before we get here:
+/// type 3 is guarded as StringExact, everything else as Fixnum, and
+/// HIR bails on types 6/7 because the backend's `ccall` lowering does
+/// not route arguments through floating-point registers.
 fn gen_ffi_call(asm: &mut Assembler, native_func: *const u8, name: ID, args: Vec<Opnd>, param_types: &[u8], ffi_return_type: u8) -> lir::Opnd {
     asm_comment!(asm, "FFI direct call to {}", name.contents_lossy());
 
-    // Convert each Ruby arg to the appropriate C type
+    // Convert each Ruby arg to the appropriate C type.
     let mut native_args = Vec::with_capacity(args.len());
     for (i, arg) in args.iter().enumerate() {
-        match param_types.get(i) {
-            Some(&3) => {
-                // Type 3 = string: extract RSTRING_PTR
-                let ptr = get_string_ptr(asm, *arg);
-                native_args.push(ptr);
+        let ty = param_types.get(i).copied().unwrap_or(0);
+        let converted = match ty {
+            3 => {
+                // string: extract RSTRING_PTR from the guarded String
+                get_string_ptr(asm, *arg)
             }
-            _ => {
-                native_args.push(*arg);
+            1 | 2 | 4 | 5 | 8 => {
+                // int/long/uint/size_t/pointer: untag the guarded Fixnum.
+                // VALUE layout for Fixnum is (n << 1) | 1, so an arithmetic
+                // shift right by 1 recovers the signed C value. For unsigned
+                // C types the high bit of a Fixnum is 0 (Fixnum range is
+                // 63-bit), so the same shift yields the correct bit pattern.
+                gen_unbox_fixnum(asm, *arg)
             }
-        }
+            6 | 7 => unreachable!(
+                "HIR should have bailed on FfiCall with float/double arg (type byte {ty})"
+            ),
+            _ => panic!("Unsupported FFI arg type byte {ty} for {}", name.contents_lossy()),
+        };
+        native_args.push(converted);
     }
 
-    // Call the native function directly
+    // Call the native function directly.
     let result = asm.ccall(native_func, native_args);
 
-    // Convert the return value back to a Ruby VALUE
+    // Convert the C return value back to a Ruby VALUE.
     match ffi_return_type {
-        5 => {
-            // size_t -> Fixnum via LONG2FIX: (val << 1) | 1
-            let shifted = asm.lshift(result, Opnd::UImm(1));
-            asm.or(shifted, Opnd::UImm(1))
+        // void: method returns nil.
+        0 => Qnil.into(),
+
+        // int: sign-extend the low 32 bits, then box via rb_int2inum.
+        // Done with shifts (`(r << 32) >> 32` arithmetic) rather than
+        // load_sext so we stay in 64-bit vregs and don't have to worry
+        // about num_bits-driven zero-extending moves dropping the high
+        // bits during argument passing.
+        1 => {
+            let up = asm.lshift(result, Opnd::UImm(32));
+            let as_long = asm.rshift(up, Opnd::UImm(32));
+            asm_ccall!(asm, rb_int2inum, as_long)
         }
-        _ => result,
+
+        // long: box via rb_int2inum (takes c_long, 64-bit on LP64).
+        2 => asm_ccall!(asm, rb_int2inum, result),
+
+        // string (const char *): build a Ruby String from the C string.
+        // NOTE: sqlite3 APIs that can return NULL (e.g. sqlite3_column_text
+        // on a NULL column) are handled at the Ruby level by inspecting
+        // sqlite3_column_type first, so we don't bother with a null check.
+        3 => asm_ccall!(asm, rb_str_new_cstr, result),
+
+        // uint: zero-extend the low 32 bits, then box via rb_uint2inum.
+        // Shift up then logical-shift down to avoid any immediate-encoding
+        // surprises with `and r64, 0xffffffff` on x86 (the imm32 would
+        // sign-extend) and ARM64's logical-immediate encoding rules.
+        4 => {
+            let up = asm.lshift(result, Opnd::UImm(32));
+            let as_ulong = asm.urshift(up, Opnd::UImm(32));
+            asm_ccall!(asm, rb_uint2inum, as_ulong)
+        }
+
+        // size_t / pointer (address-as-integer): box via rb_ull2inum so
+        // values outside the Fixnum range still round-trip correctly.
+        5 | 8 => asm_ccall!(asm, rb_ull2inum, result),
+
+        6 | 7 => unreachable!(
+            "HIR should have bailed on FfiCall with float/double return (type byte {ffi_return_type})"
+        ),
+
+        _ => panic!(
+            "Unsupported FFI return type byte {ffi_return_type} for {}",
+            name.contents_lossy()
+        ),
     }
 }
 

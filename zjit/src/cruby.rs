@@ -131,6 +131,16 @@ unsafe extern "C" {
     // (Range is 0x3000000000000001 to 0x4fffffffffffffff (1.7272337110188893E-77 to 2.3158417847463237E+77).
     pub fn rb_float_new(d: f64) -> VALUE;
 
+    // Integer boxing helpers used by FFI codegen. These route through Fixnum
+    // when the value fits and fall back to Bignum otherwise.
+    pub fn rb_int2inum(n: std::os::raw::c_long) -> VALUE;
+    pub fn rb_uint2inum(n: std::os::raw::c_ulong) -> VALUE;
+    pub fn rb_ll2inum(n: std::os::raw::c_longlong) -> VALUE;
+    pub fn rb_ull2inum(n: std::os::raw::c_ulonglong) -> VALUE;
+
+    // Create a Ruby String from a NUL-terminated C string.
+    pub fn rb_str_new_cstr(s: *const std::os::raw::c_char) -> VALUE;
+
     pub fn rb_hash_empty_p(hash: VALUE) -> VALUE;
     pub fn rb_str_setbyte(str: VALUE, index: VALUE, value: VALUE) -> VALUE;
     pub fn rb_str_getbyte(str: VALUE, index: VALUE) -> VALUE;
