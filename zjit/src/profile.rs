@@ -199,7 +199,7 @@ fn profile_invokesuper(profiler: &mut Profiler, profile: &mut IseqProfile) {
     profile_operands(profiler, profile, (argc + 1) as usize);
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Flags(u32);
 
 impl Flags {

@@ -8233,29 +8233,26 @@ mod hir_opt_tests {
           v17:CInt64 = IntAnd v12, v14
           v18:CBool = IsBitEqual v17, v16
           CondBranch v18, bb5(), bb6()
-        bb5():
-          v20:BasicObject = LoadField v11, :@foo@0x1002
-          Jump bb4(v20)
         bb6():
           v22:CUInt64[0xffffffff0000001f] = Const CUInt64(0xffffffff0000001f)
-          v23:CPtr[CPtr(0x1003)] = Const CPtr(0x1003)
+          v23:CPtr[CPtr(0x1002)] = Const CPtr(0x1002)
           v24 = RefineType v23, CUInt64
           v25:CInt64 = IntAnd v12, v22
           v26:CBool = IsBitEqual v25, v24
-          CondBranch v26, bb7(), bb8()
+          CondBranch v26, bb5(), bb7()
+        bb5():
+          v20:BasicObject = LoadField v11, :@foo@0x1003
+          Jump bb4(v20)
         bb7():
-          v28:BasicObject = LoadField v11, :@foo@0x1002
+          v28:BasicObject = GetIvar v11, :@foo
           Jump bb4(v28)
-        bb8():
-          v30:BasicObject = GetIvar v11, :@foo
-          Jump bb4(v30)
         bb4(v13:BasicObject):
-          v33:Fixnum[1] = Const Value(1)
+          v31:Fixnum[1] = Const Value(1)
           PatchPoint MethodRedefined(Integer@0x1008, +@0x1010, cme:0x1018)
-          v44:Fixnum = GuardType v13, Fixnum
-          v45:Fixnum = FixnumAdd v44, v33
+          v42:Fixnum = GuardType v13, Fixnum
+          v43:Fixnum = FixnumAdd v42, v31
           CheckInterrupts
-          Return v45
+          Return v43
         ");
     }
 
