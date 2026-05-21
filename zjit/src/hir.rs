@@ -8197,6 +8197,7 @@ pub fn iseq_to_hir(iseq: *const rb_iseq_t) -> Result<Function, ParseError> {
                         fun.push_insn(block, Insn::SideExit { state: exit_id, reason: SideExitReason::UnhandledYARVInsn(opcode), recompile: None });
                         break;  // End the block
                     }
+
                     if let Some(summary) = fun.polymorphic_summary(&profiles, self_param, exit_state.insn_idx) {
                         self_param = fun.push_insn(block, Insn::GuardType { val: self_param, guard_type: types::HeapBasicObject, state: exit_id });
                         let rbasic_flags = fun.load_rbasic_flags(block, self_param);
@@ -8209,6 +8210,13 @@ pub fn iseq_to_hir(iseq: *const rb_iseq_t) -> Result<Function, ParseError> {
                         // None means the profiled shape didn't have this ivar, so the read is nil.
                         let mut read_ivar_blocks: HashMap<Option<(Flags, attr_index_t)>, BlockId> = HashMap::new();
 
+                        let mask_block = fun.new_block(insn_idx);
+                        fun.push_insn(block, Insn::Jump(BranchEdge { target: mask_block, args: vec![] }));
+                        block = mask_block;
+
+                        let mut current_mask = 0;
+                        let mut masked = None;
+
                         for &profiled_type in summary.buckets() {
                             // End of the buckets
                             if profiled_type.is_empty() { break; }
@@ -8217,6 +8225,13 @@ pub fn iseq_to_hir(iseq: *const rb_iseq_t) -> Result<Function, ParseError> {
                             let expected_shape = profiled_type.shape();
                             let (expected_rbasic_flags, rbasic_flags_mask) = profiled_type.rbasic_flags_and_mask();
                             assert!(expected_shape.is_valid());
+
+                            // If it's a thing we can't specialize, just fall
+                            // through to a generic ivar read
+                            if rbasic_flags_mask == 0 {
+                                continue;
+                            }
+
                             // Too-complex shapes use hash tables for ivars;
                             // rb_shape_get_iv_index doesn't work for them.
                             // Let the fallthrough GetIvar handle these.
@@ -8251,13 +8266,17 @@ pub fn iseq_to_hir(iseq: *const rb_iseq_t) -> Result<Function, ParseError> {
                                 read_ivar_block
                             };
 
-                            let rbasic_flags_mask = fun.push_insn(block, Insn::Const { val: Const::CUInt64(rbasic_flags_mask) });
+                            if current_mask != rbasic_flags_mask {
+                                current_mask = rbasic_flags_mask;
+                                let temp = fun.push_insn(block, Insn::Const { val: Const::CUInt64(rbasic_flags_mask) });
+                                masked = Some(fun.push_insn(block, Insn::IntAnd { left: rbasic_flags, right: temp}));
+                            }
+
                             // The expected shape can change over run, so we put it
                             // as a pointer to keep it stable in snapshot tests.
                             let expected_rbasic_flags = fun.push_insn(block, Insn::Const { val: Const::CPtr(ptr::without_provenance(expected_rbasic_flags.to_usize())) });
                             let expected_rbasic_flags = fun.push_insn(block, Insn::RefineType { val: expected_rbasic_flags, new_type: types::CUInt64 });
-                            let masked = fun.push_insn(block, Insn::IntAnd { left: rbasic_flags, right: rbasic_flags_mask});
-                            let has_shape_and_type = fun.push_insn(block, Insn::IsBitEqual { left: masked, right: expected_rbasic_flags });
+                            let has_shape_and_type = fun.push_insn(block, Insn::IsBitEqual { left: masked.unwrap(), right: expected_rbasic_flags });
                             let fall_through = fun.new_block(insn_idx);
 
                             fun.push_insn(block, Insn::CondBranch { val: has_shape_and_type,
