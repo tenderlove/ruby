@@ -1214,12 +1214,13 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         return default_value;
     }
 
-    switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
+    shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
+
+    switch (rb_shape_layout(shape_id)) {
+      case SHAPE_ID_LAYOUT_ROBJECT:
         fields_obj = obj;
         break;
-      case T_CLASS:
-      case T_MODULE:
+      case SHAPE_ID_LAYOUT_RCLASS:
         {
             if (UNLIKELY(!rb_ractor_main_p())) {
                 // For two reasons we can only use the fast path on the main
@@ -1240,8 +1241,18 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             fields_obj = RCLASS_WRITABLE_FIELDS_OBJ(obj);
             break;
         }
-      default:
+
+      case SHAPE_ID_LAYOUT_RDATA:
+        // TODO: RDATA can be tagged as Ractor shareable but _not_ frozen,
+        // which means we need to call `ivar_ractor_check`, so we go to
+        // the general path.  We could/should make non-frozen shareable RDATA
+        // classified as "other".
+        //
+        // fields_obj = RTYPEDDATA(obj)->fields_obj;
         fields_obj = rb_obj_fields(obj, id);
+        break
+      case SHAPE_ID_LAYOUT_OTHER:
+        goto general_path;
     }
 
     if (!fields_obj) {
@@ -1250,7 +1261,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
     VALUE val = Qundef;
 
-    shape_id_t shape_id = RBASIC_SHAPE_ID_FOR_READ(fields_obj);
+    shape_id = shape_id & SHAPE_ID_READ_ONLY_MASK;
     VALUE *ivar_list = rb_imemo_fields_ptr(fields_obj);
 
     rb_getivar_cache cache = rb_getivar_cache_unpack(vm_cache_attr_index_atomic_read(is_attr, ic, cc));
