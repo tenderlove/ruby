@@ -2627,9 +2627,6 @@ unsafe fn check_ffi_trampoline(cfunc_ptr: *const u8) -> Option<FfiTrampoline> {
     let rel = unsafe { (field_ptr as *const i32).read_unaligned() } as isize;
     let var_addr = unsafe { field_ptr.offset(rel) as *const *const u8 };
     let native_func = unsafe { *var_addr };
-    if native_func.is_null() {
-        return None;
-    }
 
     Some(FfiTrampoline {
         param_types,
