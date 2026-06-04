@@ -2619,10 +2619,13 @@ unsafe fn check_ffi_trampoline(cfunc_ptr: *const u8) -> Option<FfiTrampoline> {
     // Read return_type at offset 9+param_count
     let ffi_return_type = unsafe { *cfunc_ptr.add(9 + param_count) };
 
-    // At offset 10+param_count the trampoline stores the address of a static void*
-    // variable (via .quad/.long symbol).  Read that address, then dereference it
-    // to get the actual native function pointer.
-    let var_addr = unsafe { (cfunc_ptr.add(10 + param_count) as *const *const u8).read_unaligned() };
+    // At offset 10+param_count the trampoline stores a 4-byte signed PC-relative
+    // offset (`.long _ptr_var - .`) to a static void* variable.  Reconstruct the
+    // variable's address by adding the offset to the field's own address, then
+    // dereference to get the actual native function pointer.
+    let field_ptr = unsafe { cfunc_ptr.add(10 + param_count) };
+    let rel = unsafe { (field_ptr as *const i32).read_unaligned() } as isize;
+    let var_addr = unsafe { field_ptr.offset(rel) as *const *const u8 };
     let native_func = unsafe { *var_addr };
     if native_func.is_null() {
         return None;
