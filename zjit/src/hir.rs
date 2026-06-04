@@ -2594,7 +2594,6 @@ fn iseq_get_return_value(iseq: IseqPtr, captured_opnd: Option<InsnId>, ci_flags:
 struct FfiTrampoline {
     param_types: Vec<u8>,
     ffi_return_type: u8,
-    native_name: String,
     native_func: *const u8,
 }
 
@@ -2602,13 +2601,6 @@ struct FfiTrampoline {
 /// Returns `Some(FfiTrampoline)` if the magic bytes "FFI0" are found at offset 4.
 #[cfg(target_arch = "aarch64")]
 unsafe fn check_ffi_trampoline(cfunc_ptr: *const u8) -> Option<FfiTrampoline> {
-    unsafe extern "C" {
-        fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::ffi::c_char) -> *mut std::ffi::c_void;
-    }
-
-    // RTLD_DEFAULT on macOS
-    const RTLD_DEFAULT: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
-
     // Check magic at offset 4
     let magic_ptr = unsafe { cfunc_ptr.add(4) as *const u32 };
     if unsafe { magic_ptr.read_unaligned() } != 0x46464930 {
@@ -2627,22 +2619,19 @@ unsafe fn check_ffi_trampoline(cfunc_ptr: *const u8) -> Option<FfiTrampoline> {
     // Read return_type at offset 9+param_count
     let ffi_return_type = unsafe { *cfunc_ptr.add(9 + param_count) };
 
-    // Read null-terminated function name at offset 10+param_count
-    let name_ptr = unsafe { cfunc_ptr.add(10 + param_count) as *const std::ffi::c_char };
-    let native_name = unsafe { std::ffi::CStr::from_ptr(name_ptr) }.to_string_lossy().into_owned();
-
-    // Resolve the native function via dlsym
-    let c_name = std::ffi::CString::new(native_name.as_str()).ok()?;
-    let func_ptr = unsafe { dlsym(RTLD_DEFAULT, c_name.as_ptr()) };
-    if func_ptr.is_null() {
+    // At offset 10+param_count the trampoline stores the address of a static void*
+    // variable (via .quad/.long symbol).  Read that address, then dereference it
+    // to get the actual native function pointer.
+    let var_addr = unsafe { (cfunc_ptr.add(10 + param_count) as *const *const u8).read_unaligned() };
+    let native_func = unsafe { *var_addr };
+    if native_func.is_null() {
         return None;
     }
 
     Some(FfiTrampoline {
         param_types,
         ffi_return_type,
-        native_name,
-        native_func: func_ptr as *const u8,
+        native_func,
     })
 }
 
