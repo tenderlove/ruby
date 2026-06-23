@@ -112,6 +112,25 @@ impl<T: Copy + PartialEq + Default + std::fmt::Debug, const N: usize> Distributi
         Self { kind, buckets: dist.buckets }
     }
 
+    /// Build a summary directly from a list of buckets, rather than from an
+    /// observed `Distribution`. Used to synthesize a per-class shape
+    /// distribution from a polymorphic send's profile, so the same
+    /// shape-guard-chain machinery can drive an attr_reader lowering. The
+    /// first `min(items.len(), N)` buckets are kept; the rest are left empty.
+    pub fn from_buckets(items: &[T]) -> Self {
+        let mut buckets = [T::default(); N];
+        let k = items.len().min(N);
+        buckets[..k].copy_from_slice(&items[..k]);
+        let kind = if k == 0 {
+            DistributionKind::Empty
+        } else if k == 1 {
+            DistributionKind::Monomorphic
+        } else {
+            DistributionKind::Polymorphic
+        };
+        Self { kind, buckets }
+    }
+
     pub fn is_monomorphic(&self) -> bool {
         self.kind == DistributionKind::Monomorphic
     }

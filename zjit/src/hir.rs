@@ -4907,6 +4907,72 @@ impl Function {
         }
     }
 
+    /// Emit a polymorphic instance-variable read as a chain of shape guards.
+    /// For each shape bucket in `summary`, guard the receiver's shape and, on a
+    /// match, load the ivar at that shape's offset; unmatched shapes (and
+    /// immediate/too-complex shapes) fall through to a bare `GetIvar` C call.
+    ///
+    /// `recv` is first guarded to a heap object. Returns the join `Param` that
+    /// carries the result, the join block to continue compilation in, and the
+    /// (heap-guarded) receiver so callers can reuse it for later reads.
+    ///
+    /// The `summary` does not need to come from the profile oracle: callers may
+    /// synthesize one (e.g. from a polymorphic send's per-class buckets) to
+    /// drive the same chain for an attr_reader lowering, in which case `ic`
+    /// should be null.
+    fn emit_polymorphic_ivar_chain(
+        &mut self,
+        mut block: BlockId,
+        mut recv: InsnId,
+        summary: &TypeDistributionSummary,
+        id: ID,
+        ic: *const iseq_inline_iv_cache_entry,
+        state: InsnId,
+        insn_idx: u32,
+    ) -> (InsnId, BlockId, InsnId) {
+        recv = self.push_insn(block, Insn::GuardType { val: recv, guard_type: types::HeapBasicObject, state, recompile: None });
+        let join_block = self.new_block(insn_idx);
+        let join_param = self.push_insn(join_block, Insn::Param);
+        // Dedup by expected shape so objects with different classes but the same shape can share code
+        // TODO(max): De-duplicate further by checking ivar offsets to allow
+        // different shapes with the same ivar layout to share code
+        let mut seen_shape = Vec::with_capacity(summary.buckets().len());
+        for &profiled_type in summary.buckets() {
+            // End of the buckets
+            if profiled_type.is_empty() { break; }
+            // Instance variable lookups on immediate values are always nil; don't bother
+            if profiled_type.flags().is_immediate() { continue; }
+            let profiled_shape = profiled_type.shape();
+            assert!(profiled_shape.is_valid());
+            // Too-complex shapes use hash tables for ivars;
+            // rb_shape_get_iv_index doesn't work for them.
+            // Let the fallthrough GetIvar handle these.
+            if profiled_shape.is_complex() { continue; }
+            if seen_shape.contains(&profiled_shape) { continue; }
+            seen_shape.push(profiled_shape);
+            let actual_shape = self.load_shape(block, recv);
+            // Load the expected shape to a variable
+            let expected_shape = self.push_insn(block, Insn::Const { val: Const::CShape(profiled_shape) });
+            let has_shape = self.push_insn(block, Insn::IsBitEqual { left: actual_shape, right: expected_shape });
+            let iftrue_block = self.new_block(insn_idx);
+            let target = BranchEdge { target: iftrue_block, args: vec![] };
+            let fall_through = self.new_block(insn_idx);
+
+            self.push_insn(block, Insn::CondBranch { val: has_shape,
+                if_true: target,
+                if_false: BranchEdge { target: fall_through, args: vec![] }
+            });
+
+            block = fall_through;
+            let result = self.load_ivar(iftrue_block, recv, profiled_type, id);
+            self.push_insn(iftrue_block, Insn::Jump(BranchEdge { target: join_block, args: vec![result] }));
+        }
+        // In the fallthrough case, do a generic interpreter getivar and then join.
+        let result = self.push_insn(block, Insn::GetIvar { self_val: recv, id, ic, state });
+        self.push_insn(block, Insn::Jump(BranchEdge { target: join_block, args: vec![result] }));
+        (join_param, join_block, recv)
+    }
+
     fn optimize_getivar(&mut self) {
         for block in self.reverse_post_order() {
             let old_insns = std::mem::take(&mut self.blocks[block.0].insns);
@@ -8661,6 +8727,53 @@ fn add_iseq_to_hir(
                     }
 
                     {
+                        struct IvarBranch {
+                            klass: VALUE,
+                            mid: ID,
+                            cme: *const rb_callable_method_entry_t,
+                            id: ID,
+                            summary: TypeDistributionSummary,
+                        }
+                        // Decide whether `recv.mid` resolves to an attr_reader (IVAR
+                        // method) for the bucket's class. If so, return that class's shape
+                        // buckets (re-sliced from the send's own profile) so the branch can
+                        // read the ivar inline via a shape-guard chain instead of a generic
+                        // Send. Pure lookup: emits no HIR.
+                        fn ivar_branch_for(
+                            summary: &TypeDistributionSummary,
+                            profiled_type: ProfiledType,
+                            mid: ID,
+                            argc: usize,
+                            flags: u32,
+                        ) -> Option<IvarBranch> {
+                            if argc != 0 { return None; }               // attr_reader takes no args
+                            if profiled_type.flags().is_immediate() { return None; }
+                            let klass = profiled_type.class();
+                            if klass.is_metaclass() { return None; }    // avoid class-ivar / single-ractor handling
+                            let mut cme = unsafe { rb_callable_method_entry(klass, mid) };
+                            if cme.is_null() { return None; }
+                            let mut def_type = unsafe { get_cme_def_type(cme) };
+                            while def_type == VM_METHOD_TYPE_ALIAS {
+                                cme = unsafe { rb_aliased_callable_method_entry(cme) };
+                                def_type = unsafe { get_cme_def_type(cme) };
+                            }
+                            if def_type != VM_METHOD_TYPE_IVAR { return None; }
+                            let visibility = unsafe { METHOD_ENTRY_VISI(cme) };
+                            match (visibility, flags & VM_CALL_FCALL != 0) {
+                                (METHOD_VISI_PUBLIC, _) => {}
+                                (METHOD_VISI_PRIVATE, true) => {}
+                                (METHOD_VISI_PROTECTED, true) => {}
+                                _ => return None,
+                            }
+                            let id = unsafe { get_cme_def_body_attr_id(cme) };
+                            // Re-slice the send's buckets to this class's shapes.
+                            let mut class_buckets = Vec::new();
+                            for &b in summary.buckets() {
+                                if b.is_empty() { break; }
+                                if b.class() == klass { class_buckets.push(b); }
+                            }
+                            Some(IvarBranch { klass, mid, cme, id, summary: TypeDistributionSummary::from_buckets(&class_buckets) })
+                        }
                         fn new_branch_block(
                             fun: &mut Function,
                             cd: *const rb_call_data,
@@ -8672,6 +8785,7 @@ fn add_iseq_to_hir(
                             locals_count: usize,
                             stack_count: usize,
                             join_block: BlockId,
+                            ivar: Option<&IvarBranch>,
                         ) -> BlockId {
                             let block = fun.new_block(insn_idx);
                             let self_param = fun.push_insn(block, Insn::Param);
@@ -8685,6 +8799,21 @@ fn add_iseq_to_hir(
                             let recv = state.stack_pop().unwrap();
                             let refined_recv = fun.push_insn(block, Insn::RefineType { val: recv, new_type });
                             state.replace(recv, refined_recv);
+                            // attr_reader: read the ivar inline with a shape-guard chain (driven
+                            // by the synthetic per-class summary) instead of a generic Send.
+                            // Guard method redefinition / singleton classes as the type_specialize
+                            // IVAR lowering does; fall back to a Send if we can't assume no
+                            // singleton class for this receiver class.
+                            if let Some(ivar) = ivar {
+                                if fun.assume_no_singleton_classes(block, ivar.klass, snapshot) {
+                                    fun.push_insn(block, Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass: ivar.klass, method: ivar.mid, cme: ivar.cme }, state: snapshot });
+                                    let (result, inner_join, _guarded) =
+                                        fun.emit_polymorphic_ivar_chain(block, refined_recv, &ivar.summary, ivar.id, std::ptr::null(), snapshot, insn_idx);
+                                    state.stack_push(result);
+                                    fun.push_insn(inner_join, Insn::Jump(BranchEdge { target: join_block, args: state.as_args(self_param) }));
+                                    return block;
+                                }
+                            }
                             let send = fun.push_insn(block, Insn::Send { recv: refined_recv, cd, block: None, args, state: snapshot, reason: Uncategorized(opcode) });
                             state.stack_push(send);
                             fun.push_insn(block, Insn::Jump(BranchEdge { target: join_block, args: state.as_args(self_param) }));
@@ -8707,9 +8836,10 @@ fn add_iseq_to_hir(
                                     continue;
                                 }
                                 seen_types.push(expected);
+                                let ivar_branch = ivar_branch_for(&summary, profiled_type, mid, argc as usize, flags);
                                 let has_type = fun.push_insn(block, Insn::HasType { val: recv, expected });
                                 let iftrue_block =
-                                    new_branch_block(fun, cd, argc as usize, opcode, expected, branch_insn_idx, &exit_state, locals_count, stack_count, join_block);
+                                    new_branch_block(fun, cd, argc as usize, opcode, expected, branch_insn_idx, &exit_state, locals_count, stack_count, join_block, ivar_branch.as_ref());
                                 let target = BranchEdge { target: iftrue_block, args: entry_args.clone() };
                                 let fall_through = fun.new_block(insn_idx);
                                 fun.push_insn(block, Insn::CondBranch {
@@ -9035,51 +9165,11 @@ fn add_iseq_to_hir(
                         break;  // End the block
                     }
                     if let Some(summary) = fun.polymorphic_summary(&profiles, self_param, exit_id) {
-                        self_param = fun.push_insn(block, Insn::GuardType { val: self_param, guard_type: types::HeapBasicObject, state: exit_id, recompile: None });
-                        let join_block = fun.new_block(insn_idx);
-                        let join_param = fun.push_insn(join_block, Insn::Param);
-                        // Dedup by expected shape so objects with different classes but the same shape can share code
-                        // TODO(max): De-duplicate further by checking ivar offsets to allow
-                        // different shapes with the same ivar layout to share code
-                        let mut seen_shape = Vec::with_capacity(summary.buckets().len());
-                        for &profiled_type in summary.buckets() {
-                            // End of the buckets
-                            if profiled_type.is_empty() { break; }
-                            // Instance variable lookups on immediate values are always nil; don't bother
-                            if profiled_type.flags().is_immediate() { continue; }
-                            let profiled_shape = profiled_type.shape();
-                            assert!(profiled_shape.is_valid());
-                            // Too-complex shapes use hash tables for ivars;
-                            // rb_shape_get_iv_index doesn't work for them.
-                            // Let the fallthrough GetIvar handle these.
-                            if profiled_shape.is_complex() { continue; }
-                            if seen_shape.contains(&profiled_shape) { continue; }
-                            seen_shape.push(profiled_shape);
-                            let actual_shape = fun.load_shape(block, self_param);
-                            // Load the expected shape to a variable
-                            let expected_shape = fun.push_insn(block, Insn::Const { val: Const::CShape(profiled_shape) });
-                            let has_shape = fun.push_insn(block, Insn::IsBitEqual { left: actual_shape, right: expected_shape });
-                            let iftrue_block = fun.new_block(insn_idx);
-                            let target = BranchEdge { target: iftrue_block, args: vec![] };
-                            let fall_through = fun.new_block(insn_idx);
-
-                            fun.push_insn(block, Insn::CondBranch { val: has_shape,
-                                if_true: target,
-                                if_false: BranchEdge { target: fall_through, args: vec![] }
-                            });
-
-                            block = fall_through;
-                            let result = fun.load_ivar(iftrue_block, self_param, profiled_type, id);
-                            fun.push_insn(iftrue_block, Insn::Jump(BranchEdge { target: join_block, args: vec![result] }));
-                        }
-                        // In the fallthrough case, do a generic interpreter getivar and then join.
-                        let result = fun.push_insn(block, Insn::GetIvar { self_val: self_param, id, ic, state: exit_id });
-                        fun.push_insn(block, Insn::Jump(BranchEdge { target: join_block, args: vec![result] }));
-                        state.stack_push(join_param);
+                        let (result, join_block, guarded_self) =
+                            fun.emit_polymorphic_ivar_chain(block, self_param, &summary, id, ic, exit_id, insn_idx);
+                        self_param = guarded_self;
+                        state.stack_push(result);
                         // Continue compilation from the join block at the next instruction.
-                        // Make a copy of the current state without the args (pop the receiver
-                        // and push the result) because we just use the locals/stack sizes to
-                        // make the right number of Params
                         block = join_block;
                     } else {
                         // Possibly monomorphic case; handled in optimize_getivar
